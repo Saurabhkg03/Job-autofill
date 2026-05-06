@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "AI Job AutoFill",
+  "version": "1.0",
+  "description": "Smart job application autofill using Groq AI.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "https://api.groq.com/*"
+  ],
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "action": {
+    "default_title": "AI Autofill"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "all_frames": true
+    }
+  ]
+}
