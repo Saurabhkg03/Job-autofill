@@ -172,6 +172,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalApiKeyInput = document.getElementById('modal-api-key');
     const btnSaveModalApiKey = document.getElementById('btn-save-modal-api-key');
     const btnCloseModal = document.getElementById('btn-close-modal');
+    const profileSearchInput = document.getElementById('profile-search');
+    const profileSearchCount = document.getElementById('profile-search-count');
+    let currentProfileData = saurabhData;
 
     // Tab Switching
     function switchTab(tabName) {
@@ -228,6 +231,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    if (profileSearchInput) {
+        profileSearchInput.addEventListener('input', () => {
+            renderProfileData(currentProfileData);
+        });
+    }
+
     if (btnCloseInfo) {
         btnCloseInfo.addEventListener('click', () => {
             infoNotification.classList.add('hidden');
@@ -280,7 +289,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderProfileData(data) {
         const container = document.getElementById('profile-fields-container');
         if (!container) return;
+        currentProfileData = data;
         container.innerHTML = '';
+        if (profileSearchCount) profileSearchCount.textContent = '';
         
         let parsed = {};
         try {
@@ -290,12 +301,35 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const createRow = (label, value) => {
+        const query = (profileSearchInput?.value || '').trim().toLowerCase();
+        let visibleRows = 0;
+        let totalRows = 0;
+
+        const normalizeSearchText = (...parts) => parts
+            .filter(part => part !== null && part !== undefined)
+            .join(' ')
+            .replace(/_/g, ' ')
+            .toLowerCase();
+
+        const matchesSearch = (...parts) => {
+            if (!query) return true;
+            return normalizeSearchText(...parts).includes(query);
+        };
+
+        const createRow = (section, label, value) => {
             if (value === null || value === undefined || value === '') return null;
             if (typeof value === 'object') return null;
+            totalRows += 1;
+
+            if (!matchesSearch(section, label, value)) {
+                return null;
+            }
+
+            visibleRows += 1;
             
             const row = document.createElement('div');
             row.className = 'field-row';
+            row.dataset.searchText = normalizeSearchText(section, label, value);
             
             const labelEl = document.createElement('div');
             labelEl.className = 'field-label';
@@ -304,17 +338,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const valEl = document.createElement('div');
             valEl.className = 'field-value';
             valEl.textContent = value;
+            valEl.title = 'Click to copy';
+            valEl.style.cursor = 'copy';
             
             const copyBtn = document.createElement('button');
             copyBtn.className = 'btn-copy';
             copyBtn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
             copyBtn.title = "Copy to clipboard";
-            copyBtn.addEventListener('click', () => {
+
+            const copyValue = () => {
                 navigator.clipboard.writeText(value.toString());
                 const originalSvg = copyBtn.innerHTML;
                 copyBtn.innerHTML = `<svg fill="none" stroke="var(--success)" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
                 setTimeout(() => { copyBtn.innerHTML = originalSvg; }, 1500);
-            });
+            };
+
+            valEl.addEventListener('click', copyValue);
+            copyBtn.addEventListener('click', copyValue);
             
             row.appendChild(labelEl);
             row.appendChild(valEl);
@@ -324,53 +364,100 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const renderSection = (title, obj) => {
             if (!obj || (typeof obj === 'object' && Object.keys(obj).length === 0)) return;
+
+            const sectionFragment = document.createDocumentFragment();
+            let sectionRows = 0;
             
             const titleEl = document.createElement('div');
             titleEl.className = 'field-section-title';
             titleEl.textContent = title.replace(/_/g, ' ');
-            container.appendChild(titleEl);
+            sectionFragment.appendChild(titleEl);
             
             if (Array.isArray(obj)) {
                 obj.forEach((item, index) => {
                     if (typeof item === 'string') {
-                        const row = createRow(`Item ${index+1}`, item);
-                        if (row) container.appendChild(row);
+                        const row = createRow(title, `Item ${index+1}`, item);
+                        if (row) {
+                            sectionFragment.appendChild(row);
+                            sectionRows += 1;
+                        }
                     } else if (typeof item === 'object') {
+                        const itemLabel = inferItemLabel(item, index);
+                        const itemMatches = matchesSearch(title, itemLabel);
                         const itemTitle = document.createElement('div');
                         itemTitle.style.fontWeight = '600';
                         itemTitle.style.fontSize = '0.8rem';
                         itemTitle.style.marginTop = '6px';
                         itemTitle.style.color = 'var(--primary)';
-                        itemTitle.textContent = `#${index + 1}`;
-                        container.appendChild(itemTitle);
+                        itemTitle.textContent = itemLabel;
+                        const itemFragment = document.createDocumentFragment();
+                        itemFragment.appendChild(itemTitle);
+                        let itemRows = 0;
                         
                         Object.entries(item).forEach(([k, v]) => {
                             if (Array.isArray(v)) {
-                                const row = createRow(k, v.join(', '));
-                                if(row) container.appendChild(row);
+                                const row = createRow(`${title} ${itemLabel}`, k, v.join(', '));
+                                if (row) {
+                                    itemFragment.appendChild(row);
+                                    itemRows += 1;
+                                }
                             } else {
-                                const row = createRow(k, v);
-                                if (row) container.appendChild(row);
+                                const row = createRow(`${title} ${itemLabel}`, k, v);
+                                if (row) {
+                                    itemFragment.appendChild(row);
+                                    itemRows += 1;
+                                }
                             }
                         });
+
+                        if (itemRows || itemMatches) {
+                            sectionFragment.appendChild(itemFragment);
+                            sectionRows += itemRows;
+                        }
                     }
                 });
             } else {
                 Object.entries(obj).forEach(([k, v]) => {
                     if (Array.isArray(v)) {
-                         const row = createRow(k, v.join(', '));
-                         if(row) container.appendChild(row);
+                         const row = createRow(title, k, v.join(', '));
+                         if (row) {
+                             sectionFragment.appendChild(row);
+                             sectionRows += 1;
+                         }
                     } else if (typeof v !== 'object') {
-                        const row = createRow(k, v);
-                        if (row) container.appendChild(row);
+                        const row = createRow(title, k, v);
+                        if (row) {
+                            sectionFragment.appendChild(row);
+                            sectionRows += 1;
+                        }
                     }
                 });
+            }
+
+            if (sectionRows || (query && matchesSearch(title))) {
+                container.appendChild(sectionFragment);
             }
         };
 
         Object.entries(parsed).forEach(([key, value]) => {
             renderSection(key, value);
         });
+
+        if (!visibleRows) {
+            const empty = document.createElement('div');
+            empty.className = 'profile-empty-state';
+            empty.textContent = query ? `No profile data matched "${profileSearchInput.value.trim()}".` : 'No quick-copy data found in this profile.';
+            container.appendChild(empty);
+        }
+
+        if (profileSearchCount) {
+            profileSearchCount.textContent = query ? `${visibleRows} of ${totalRows}` : `${totalRows} fields`;
+        }
+    }
+
+    function inferItemLabel(item, index) {
+        const preferred = item?.name || item?.institution || item?.company || item?.position || item?.title || item?.education_level || item?.language;
+        return preferred ? `#${index + 1} ${preferred}` : `#${index + 1}`;
     }
 
     document.getElementById('btn-open-dashboard').addEventListener('click', () => {

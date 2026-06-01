@@ -1,829 +1,1300 @@
-document.addEventListener('DOMContentLoaded', () => {
-    let userProfile = {};
-    let activeSection = null; // Tracks active tab within Visual Editor
-    let hasUnsavedChanges = false;
+document.addEventListener("DOMContentLoaded", async () => {
+  const SECTION_SCHEMA = [
+    {
+      key: "personal_information",
+      title: "Personal Information",
+      description: "Core identity, contact, and location details used across most ATS screens.",
+      type: "object",
+      fields: [
+        { key: "prefix", label: "Prefix" },
+        { key: "name", label: "Full Name", required: true },
+        { key: "middle_name", label: "Middle Name" },
+        { key: "surname", label: "Surname" },
+        { key: "fathers_name", label: "Father's Name" },
+        { key: "mothers_name", label: "Mother's Name" },
+        { key: "date_of_birth", label: "Date of Birth", type: "date" },
+        { key: "gender", label: "Gender" },
+        { key: "nationality", label: "Nationality" },
+        { key: "country", label: "Country" },
+        { key: "state", label: "State / Region" },
+        { key: "city", label: "City" },
+        { key: "address", label: "Address", type: "textarea", span: 2 },
+        { key: "zip_code", label: "ZIP / Postal Code" },
+        { key: "phone_prefix", label: "Phone Prefix" },
+        { key: "phone", label: "Primary Phone", required: true },
+        { key: "alternate_phone", label: "Alternate Phone" },
+        { key: "email", label: "Primary Email", type: "email", required: true },
+        { key: "alternate_email", label: "Alternate Email", type: "email" },
+        { key: "linkedin", label: "LinkedIn", type: "url" },
+        { key: "github", label: "GitHub", type: "url" },
+        { key: "twitter", label: "Twitter / X", type: "url" },
+        { key: "website", label: "Website / Portfolio", type: "url" },
+        { key: "aadhar_no", label: "Aadhaar Number" },
+        { key: "pan_no", label: "PAN Number" }
+      ]
+    },
+    {
+      key: "education_details",
+      title: "Education",
+      description: "Normalized education entries with ISO dates for start and completion.",
+      type: "array",
+      addLabel: "Add Education Entry",
+      itemTitleKey: "institution",
+      fields: [
+        { key: "education_level", label: "Education Level", required: true },
+        { key: "institution", label: "Institution", required: true },
+        { key: "field_of_study", label: "Field of Study" },
+        { key: "final_evaluation_grade", label: "Grade / Score" },
+        { key: "start_date", label: "Start Date", type: "date" },
+        { key: "end_date", label: "End Date", type: "date" },
+        { key: "year_of_completion", label: "Year of Completion" },
+        { key: "enrollment_number", label: "Enrollment Number" }
+      ]
+    },
+    {
+      key: "experience_details",
+      title: "Work Experience",
+      description: "Experience cards are draggable and retain ATS-friendly chronological structure.",
+      type: "array",
+      addLabel: "Add Experience",
+      itemTitleKey: "position",
+      fields: [
+        { key: "position", label: "Position", required: true },
+        { key: "company", label: "Company", required: true },
+        { key: "location", label: "Location" },
+        { key: "start_date", label: "Start Date", type: "date" },
+        { key: "end_date", label: "End Date", type: "date" },
+        { key: "employment_period", label: "Employment Period" },
+        { key: "key_responsibilities", label: "Key Responsibilities", type: "list", span: 2 },
+        { key: "skills_acquired", label: "Skills Acquired", type: "list", span: 2 }
+      ]
+    },
+    {
+      key: "projects",
+      title: "Projects",
+      description: "Project cards are ideal for ATS project sections and portfolio inserts.",
+      type: "array",
+      addLabel: "Add Project",
+      itemTitleKey: "name",
+      fields: [
+        { key: "name", label: "Project Name", required: true },
+        { key: "description", label: "Description", type: "textarea", span: 2 },
+        { key: "start_date", label: "Start Date", type: "date" },
+        { key: "end_date", label: "End Date", type: "date" }
+      ]
+    },
+    {
+      key: "technical_skills",
+      title: "Technical Skills",
+      description: "Each bucket is stored as an array and edited one skill per line.",
+      type: "object",
+      fields: [
+        { key: "Languages", label: "Languages", type: "list", span: 2 },
+        { key: "Frameworks_Libraries", label: "Frameworks & Libraries", type: "list", span: 2 },
+        { key: "DevOps_Cloud", label: "DevOps & Cloud", type: "list", span: 2 },
+        { key: "Tools", label: "Tools", type: "list", span: 2 }
+      ]
+    },
+    {
+      key: "achievements",
+      title: "Achievements",
+      description: "Short, scannable outcomes that AI can map into honors and awards fields.",
+      type: "array",
+      addLabel: "Add Achievement",
+      itemTitleKey: "name",
+      fields: [
+        { key: "name", label: "Achievement Name", required: true },
+        { key: "description", label: "Description", type: "textarea", span: 2 }
+      ]
+    },
+    {
+      key: "certifications",
+      title: "Certifications",
+      description: "Supports either simple one-line certification names or richer inferred fields.",
+      type: "array",
+      addLabel: "Add Certification",
+      simpleArray: true,
+      simpleLabel: "Certification"
+    },
+    {
+      key: "languages",
+      title: "Languages",
+      description: "Spoken language fluency for global application forms.",
+      type: "array",
+      addLabel: "Add Language",
+      itemTitleKey: "language",
+      fields: [
+        { key: "language", label: "Language", required: true },
+        { key: "proficiency", label: "Proficiency", required: true }
+      ]
+    },
+    {
+      key: "additional_information",
+      title: "Additional Information",
+      description: "Salary, availability, diversity disclosures, and resume / cover letter assets.",
+      type: "object",
+      fields: [
+        { key: "current_salary", label: "Current Salary" },
+        { key: "expected_salary", label: "Expected Salary" },
+        { key: "notice_period", label: "Notice Period" },
+        { key: "earliest_available_date", label: "Earliest Available Date", type: "date" },
+        { key: "resume_cv", label: "Resume Asset URL or Text", type: "textarea", span: 2 },
+        { key: "cover_letter", label: "Cover Letter", type: "textarea", span: 2 },
+        { key: "cover_letter_url", label: "Cover Letter Asset URL", type: "url", span: 2 },
+        { key: "gender_identity", label: "Gender Identity" },
+        { key: "sexual_orientation", label: "Sexual Orientation" },
+        { key: "veteran_status", label: "Veteran Status" },
+        { key: "race_ethnicity", label: "Race / Ethnicity" },
+        { key: "disability_status", label: "Disability Status" }
+      ]
+    },
+    {
+      key: "work_preferences",
+      title: "Work Preferences",
+      description: "High-signal ATS toggles stored consistently as Yes / No.",
+      type: "object",
+      fields: [
+        { key: "remote_work", label: "Remote Work", type: "select", options: ["Yes", "No"] },
+        { key: "in_person_work", label: "In-Person Work", type: "select", options: ["Yes", "No"] },
+        { key: "open_to_relocation", label: "Open to Relocation", type: "select", options: ["Yes", "No"] },
+        { key: "willing_to_complete_assessments", label: "Complete Assessments", type: "select", options: ["Yes", "No"] },
+        { key: "willing_to_undergo_drug_tests", label: "Drug Tests", type: "select", options: ["Yes", "No"] },
+        { key: "willing_to_undergo_background_checks", label: "Background Checks", type: "select", options: ["Yes", "No"] }
+      ]
+    }
+  ];
 
-    document.body.addEventListener('input', () => { hasUnsavedChanges = true; });
-    document.body.addEventListener('change', () => { hasUnsavedChanges = true; });
+  const state = {
+    profile: {},
+    activeView: "visual",
+    activeSection: null,
+    autoContinue: false,
+    saveTimer: null,
+    saveState: "saving",
+    lastSavedAt: null,
+    validationIssues: [],
+    jsonError: "",
+    dragIndex: null,
+    validationTimer: null
+  };
 
-    window.addEventListener('beforeunload', (e) => {
-        if (hasUnsavedChanges) {
-            e.preventDefault();
-            e.returnValue = '';
-        }
+  const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
+  const visualView = document.getElementById("visual-view");
+  const jsonView = document.getElementById("json-view");
+  const sectionTabs = document.getElementById("section-tabs");
+  const sectionRoot = document.getElementById("section-root");
+  const validationRoot = document.getElementById("validation-root");
+  const sectionMeta = document.getElementById("section-meta");
+  const saveStatus = document.getElementById("save-status");
+  const jsonStatus = document.getElementById("json-status");
+  const jsonTextarea = document.getElementById("json-textarea");
+  const autoContinueToggle = document.getElementById("toggle-auto-continue");
+  const importFile = document.getElementById("import-file");
+
+  const schemaMap = new Map(SECTION_SCHEMA.map((section) => [section.key, section]));
+
+  await loadInitialState();
+  bindEvents();
+  renderAll();
+
+  async function loadInitialState() {
+    const storage = await storageGet(["userProfile", "settingAutoContinue"]);
+    let loadedProfile = buildDefaultProfile();
+
+    if (storage.userProfile) {
+      try {
+        loadedProfile = ensureProfileShape(JSON.parse(storage.userProfile));
+      } catch (error) {
+        console.warn("[Dashboard] Failed to parse stored profile, using defaults.", error);
+      }
+    }
+
+    state.profile = normalizeProfileDates(loadedProfile);
+    state.autoContinue = Boolean(storage.settingAutoContinue);
+    state.activeSection = getSectionKeys()[0];
+    state.saveState = "saved";
+    state.validationIssues = validateProfile(state.profile);
+    syncJsonTextarea();
+  }
+
+  function bindEvents() {
+    navButtons.forEach((button) => {
+      button.addEventListener("click", () => switchView(button.dataset.view));
     });
 
-    const STATIC_SECTIONS = ['personal_information', 'statutory_and_legal', 'job_preferences', 'education_history'];
+    document.getElementById("btn-import").addEventListener("click", () => importFile.click());
+    document.getElementById("btn-export").addEventListener("click", exportProfile);
+    importFile.addEventListener("change", handleImport);
 
-    // Helper to convert "YYYY-MM" from HTML <input type="month"> into ATS-friendly parts
-    function parseDateForATS(dateString, isCurrent = false) {
-        if (isCurrent || !dateString) {
-            return { month: "", month_name: "", year: "Present" };
-        }
-        const [year, month, day] = dateString.split('-');
-        const dateObj = new Date(year, parseInt(month) - 1);
-        const monthName = dateObj.toLocaleString('default', { month: 'long' }); // "March"
-        
-        return { month: parseInt(month).toString(), month_name: monthName, year: year, day: day || "" };
+    autoContinueToggle.addEventListener("change", () => {
+      state.autoContinue = autoContinueToggle.checked;
+      queueSave();
+      updateSaveStatus();
+    });
+
+    sectionRoot.addEventListener("input", handleVisualInput);
+    sectionRoot.addEventListener("change", handleVisualInput);
+    sectionRoot.addEventListener("focusout", handleFieldRename);
+    sectionRoot.addEventListener("click", handleSectionClick);
+    sectionRoot.addEventListener("dragstart", handleDragStart);
+    sectionRoot.addEventListener("dragover", handleDragOver);
+    sectionRoot.addEventListener("drop", handleDrop);
+    sectionRoot.addEventListener("dragend", () => {
+      state.dragIndex = null;
+      renderSection();
+    });
+
+    jsonTextarea.addEventListener("input", () => {
+      try {
+        const parsed = JSON.parse(jsonTextarea.value);
+        state.profile = ensureProfileShape(normalizeProfileDates(parsed));
+        state.jsonError = "";
+        state.validationIssues = validateProfile(state.profile);
+        state.activeSection = getSectionKeys().includes(state.activeSection)
+          ? state.activeSection
+          : getSectionKeys()[0];
+        jsonStatus.textContent = "JSON is valid. Autosave queued.";
+        jsonStatus.className = "pill saving";
+        renderSectionTabs();
+        renderValidationPanel();
+        queueSave();
+      } catch (error) {
+        state.jsonError = error.message;
+        state.saveState = "error";
+        updateSaveStatus();
+        jsonStatus.textContent = `JSON error: ${error.message}`;
+        jsonStatus.className = "pill error";
+      }
+    });
+
+    window.addEventListener("beforeunload", (event) => {
+      if (state.saveState === "saving" || state.saveTimer) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
+  }
+
+  function switchView(nextView) {
+    if (nextView === "visual" && state.jsonError) {
+      jsonStatus.textContent = "Fix JSON before switching back to the visual editor.";
+      jsonStatus.className = "pill error";
+      return;
     }
 
-    function formatDateForInput(dateObj) {
-        if (!dateObj || typeof dateObj !== 'object' || dateObj.year === 'Present' || !dateObj.year) return '';
-        const monthStr = String(dateObj.month || "1").padStart(2, '0');
-        const dayStr = String(dateObj.day || "01").padStart(2, '0');
-        return `${dateObj.year}-${monthStr}-${dayStr}`;
+    state.activeView = nextView;
+    navButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === nextView));
+    visualView.classList.toggle("active", nextView === "visual");
+    jsonView.classList.toggle("active", nextView === "json");
+
+    if (nextView === "json") {
+      syncJsonTextarea();
+      jsonStatus.textContent = "JSON is in sync.";
+      jsonStatus.className = "pill saved";
+    } else {
+      renderSection();
+      renderValidationPanel();
+    }
+  }
+
+  function renderAll() {
+    autoContinueToggle.checked = state.autoContinue;
+    renderSectionTabs();
+    renderSection();
+    renderValidationPanel();
+    syncJsonTextarea();
+    updateSaveStatus();
+  }
+
+  function renderSectionTabs() {
+    sectionTabs.innerHTML = "";
+    getSectionKeys().forEach((key) => {
+      const button = document.createElement("button");
+      button.className = `section-tab-btn ${state.activeSection === key ? "active" : ""}`;
+      button.textContent = getSectionTitle(key);
+      button.addEventListener("click", () => {
+        state.activeSection = key;
+        renderSectionTabs();
+        renderSection();
+        renderValidationPanel();
+      });
+      sectionTabs.appendChild(button);
+    });
+  }
+
+  function renderSection() {
+    const sectionKey = state.activeSection;
+    const schema = resolveSchema(sectionKey);
+    const sectionValue = getSectionValue(sectionKey);
+
+    sectionRoot.innerHTML = "";
+    sectionMeta.textContent = schema.description || "Schema-driven profile editing active.";
+    sectionMeta.className = state.validationIssues.some((issue) => issue.path.startsWith(sectionKey))
+      ? "pill warning"
+      : "pill saved";
+
+    const header = document.createElement("div");
+    header.className = "section-header-card";
+    header.innerHTML = `
+      <div class="section-description">
+        <h3>${schema.title}</h3>
+        <p>${schema.description || "This section is dynamically generated from the profile schema."}</p>
+      </div>
+      <div class="array-actions" id="section-actions"></div>
+    `;
+    sectionRoot.appendChild(header);
+
+    const actionHost = header.querySelector("#section-actions");
+    if (schema.type === "array") {
+      actionHost.appendChild(createActionButton(schema.addLabel || "Add Item", "add-array-item", sectionKey));
+    } else {
+      actionHost.appendChild(createActionButton("Add Custom Field", "add-custom-field", sectionKey));
     }
 
-    // Elements
-    const navBtns = document.querySelectorAll('.nav-btn');
-    const views = document.querySelectorAll('.view-panel');
-    const sectionTabsContainer = document.getElementById('section-tabs');
-    const dynamicForm = document.getElementById('dynamic-form');
-    const jsonTextarea = document.getElementById('json-textarea');
-    const btnSaveGlobal = document.getElementById('btn-save-global');
-    const toastMessage = document.getElementById('toast-message');
-    
-    const btnImport = document.getElementById('btn-import');
-    const importFile = document.getElementById('import-file');
-    const btnExport = document.getElementById('btn-export');
+    if (schema.type === "array") {
+      renderArraySection(sectionKey, schema, Array.isArray(sectionValue) ? sectionValue : []);
+      return;
+    }
 
-    // 1. Loading Data
-    chrome.storage.local.get(['userProfile'], (result) => {
-        if (result.userProfile) {
-            try {
-                userProfile = JSON.parse(result.userProfile);
-            } catch (e) {
-                userProfile = {};
-            }
-        }
-        
-        // Ensure static sections exist
-        STATIC_SECTIONS.forEach(sec => {
-            if (!userProfile[sec]) {
-                userProfile[sec] = {};
-            }
+    renderObjectSection(sectionKey, schema, sectionValue && typeof sectionValue === "object" ? sectionValue : {});
+  }
+
+  function renderObjectSection(sectionKey, schema, sectionValue) {
+    const fieldGrid = document.createElement("div");
+    fieldGrid.className = "field-grid";
+
+    const fields = composeDisplayFields(schema, sectionValue);
+    if (!fields.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-card";
+      empty.textContent = "This section is empty. Use 'Add Custom Field' to start shaping it.";
+      sectionRoot.appendChild(empty);
+      return;
+    }
+
+    fields.forEach((field) => {
+      const path = `${sectionKey}.${field.key}`;
+      const value = getByPath(state.profile, path);
+      fieldGrid.appendChild(createFieldNode(path, field, value, { objectPath: sectionKey, keyEditable: true }));
+    });
+
+    sectionRoot.appendChild(fieldGrid);
+    refreshValidationState();
+  }
+
+  function renderArraySection(sectionKey, schema, items) {
+    const list = document.createElement("div");
+    list.className = "array-list";
+    list.dataset.section = sectionKey;
+
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-card";
+      empty.textContent = "No entries yet. Add one to start building a repeatable ATS-ready section.";
+      list.appendChild(empty);
+    }
+
+    items.forEach((item, index) => {
+      const card = document.createElement("div");
+      card.className = "array-card";
+      card.draggable = true;
+      card.dataset.section = sectionKey;
+      card.dataset.index = String(index);
+
+      const titleValue = schema.simpleArray
+        ? item
+        : item?.[schema.itemTitleKey] || item?.name || item?.title || `${schema.title} ${index + 1}`;
+
+      const toolbar = document.createElement("div");
+      toolbar.className = "array-toolbar";
+      toolbar.innerHTML = `
+        <div class="section-empty">
+          <span class="drag-handle">Drag</span>
+          <strong>${escapeHtml(String(titleValue || `${schema.title} ${index + 1}`))}</strong>
+        </div>
+        <div class="array-actions">
+          <button class="icon-btn" data-action="move-up" data-section="${sectionKey}" data-index="${index}">Up</button>
+          <button class="icon-btn" data-action="move-down" data-section="${sectionKey}" data-index="${index}">Down</button>
+          <button class="icon-btn" data-action="remove-item" data-section="${sectionKey}" data-index="${index}">Remove</button>
+        </div>
+      `;
+      card.appendChild(toolbar);
+
+      const grid = document.createElement("div");
+      grid.className = "field-grid";
+
+      if (schema.simpleArray) {
+        grid.appendChild(
+          createFieldNode(`${sectionKey}.${index}`, {
+            key: String(index),
+            label: schema.simpleLabel || "Value",
+            type: "text"
+          }, item)
+        );
+      } else {
+        const itemFields = composeDisplayFields(schema, item || {});
+        itemFields.forEach((field) => {
+          grid.appendChild(
+            createFieldNode(`${sectionKey}.${index}.${field.key}`, field, item?.[field.key], {
+              objectPath: `${sectionKey}.${index}`,
+              keyEditable: true
+            })
+          );
         });
+      }
 
-        initJSONEditor();
-        buildFormUI();
+      card.appendChild(grid);
+      list.appendChild(card);
     });
 
-    // 2. Main Navigation (Visual vs JSON)
-    navBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const targetView = btn.dataset.view;
-            
-            navBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+    sectionRoot.appendChild(list);
+    refreshValidationState();
+  }
 
-            if (targetView === 'form-view') {
-                try {
-                    userProfile = JSON.parse(jsonTextarea.value);
-                    buildFormUI();
-                } catch (e) {
-                    alert("Invalid JSON format. Please fix errors before switching views.");
-                    return;
-                }
-            } 
-            else if (targetView === 'json-view') {
-                syncFormToProfile();
-                initJSONEditor();
-            }
+  function createFieldNode(path, field, value, options = {}) {
+    const shell = document.createElement("div");
+    shell.className = `field-shell ${field.span === 2 ? "span-2" : ""}`;
+    shell.dataset.path = path;
 
-            views.forEach(v => v.classList.remove('active'));
-            document.getElementById(targetView).classList.add('active');
-        });
-    });
+    if (options.keyEditable) {
+      const caption = document.createElement("div");
+      caption.className = "field-caption";
+      caption.textContent = "Field name";
 
-    // 3. UI Construction Helper for Tabs
-    function formatTitle(key) {
-        return key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.className = "field-name-input";
+      nameInput.value = field.key;
+      nameInput.dataset.role = "field-key";
+      nameInput.dataset.objectPath = options.objectPath || "";
+      nameInput.dataset.currentKey = field.key;
+      nameInput.dataset.originalValue = field.key;
+
+      shell.append(caption, nameInput);
     }
 
-    function buildFormUI() {
-        // Hide all static sections and the dynamic form first
-        document.querySelectorAll('.static-form-section').forEach(el => el.classList.add('hidden'));
-        dynamicForm.classList.add('hidden');
-        dynamicForm.innerHTML = '';
-        sectionTabsContainer.innerHTML = '';
+    const input = buildInputControl(path, field, value);
+    const help = document.createElement("div");
+    help.className = "field-help";
+    help.textContent = field.hint || "";
 
-        const rootKeys = Object.keys(userProfile);
-        if (rootKeys.length === 0) {
-            dynamicForm.classList.remove('hidden');
-            dynamicForm.innerHTML = `
-                <div class="empty-state">
-                    <h2>No Profile Data Found</h2>
-                    <p>Import a JSON profile or start adding sections manually.</p>
-                    <button class="btn-primary mt-4" id="btn-empty-import" style="margin-top: 16px;">Import JSON</button>
-                </div>
-            `;
-            document.getElementById('btn-empty-import').addEventListener('click', () => {
-                document.getElementById('import-file').click();
-            });
+    shell.append(input, help);
+    return shell;
+  }
+
+  function buildInputControl(path, field, value) {
+    const inputType = inferFieldType(field, value);
+    const control = inputType === "textarea" || inputType === "list" || inputType === "json"
+      ? document.createElement("textarea")
+      : inputType === "select"
+        ? document.createElement("select")
+        : document.createElement("input");
+
+    control.dataset.path = path;
+    control.dataset.fieldType = inputType;
+    control.dataset.required = field.required ? "true" : "false";
+
+    if (control.tagName === "INPUT") {
+      control.type = inputType === "date" || inputType === "email" || inputType === "url" ? inputType : "text";
+    }
+
+    if (control.tagName === "SELECT") {
+      const values = field.options || ["Yes", "No"];
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "Select...";
+      control.appendChild(blank);
+
+      values.forEach((option) => {
+        const optionNode = document.createElement("option");
+        optionNode.value = option;
+        optionNode.textContent = option;
+        control.appendChild(optionNode);
+      });
+      control.value = value || "";
+      return control;
+    }
+
+    if (inputType === "list") {
+      control.value = Array.isArray(value) ? value.join("\n") : "";
+      control.placeholder = "One item per line";
+      return control;
+    }
+
+    if (inputType === "json") {
+      control.value = value ? JSON.stringify(value, null, 2) : "";
+      control.placeholder = "{ }";
+      return control;
+    }
+
+    control.value = value ?? "";
+    return control;
+  }
+
+  function handleVisualInput(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) {
+      return;
+    }
+
+    const path = target.dataset.path;
+    if (!path) {
+      return;
+    }
+
+    const fieldType = target.dataset.fieldType || "text";
+    const nextValue = parseFieldValue(fieldType, target.value);
+    setByPath(state.profile, path, nextValue);
+
+    queueValidationRefresh();
+    queueSave();
+  }
+
+  function handleFieldRename(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || target.dataset.role !== "field-key") {
+      return;
+    }
+
+    const objectPath = target.dataset.objectPath || "";
+    const currentKey = target.dataset.currentKey || "";
+    const desiredKey = sanitizeFieldKey(target.value);
+
+    if (!objectPath || !currentKey) {
+      return;
+    }
+
+    if (!desiredKey) {
+      target.value = currentKey;
+      return;
+    }
+
+    if (desiredKey === currentKey) {
+      target.value = desiredKey;
+      return;
+    }
+
+    const renameResult = renameFieldKey(objectPath, currentKey, desiredKey);
+    if (!renameResult.ok) {
+      target.value = currentKey;
+      state.saveState = "error";
+      updateSaveStatus(renameResult.message || "Could not rename field.");
+      return;
+    }
+
+    state.validationIssues = validateProfile(state.profile);
+    renderSectionTabs();
+    renderSection();
+    renderValidationPanel();
+    syncJsonTextarea({ preserveFocusedJson: true });
+    queueSave();
+  }
+
+  function handleSectionClick(event) {
+    const button = event.target.closest("[data-action]");
+    if (!button) {
+      return;
+    }
+
+    const action = button.dataset.action;
+    const section = button.dataset.section;
+    const index = Number.parseInt(button.dataset.index || "-1", 10);
+
+    if (action === "add-array-item") {
+      const schema = resolveSchema(section);
+      const items = Array.isArray(state.profile[section]) ? [...state.profile[section]] : [];
+      items.push(createArrayItemTemplate(schema, items[0]));
+      state.profile[section] = items;
+    } else if (action === "remove-item") {
+      state.profile[section].splice(index, 1);
+    } else if (action === "move-up") {
+      moveArrayItem(state.profile[section], index, index - 1);
+    } else if (action === "move-down") {
+      moveArrayItem(state.profile[section], index, index + 1);
+    } else if (action === "add-custom-field") {
+      const keyName = prompt("New field key");
+      if (!keyName) {
+        return;
+      }
+      const sanitized = keyName.trim().replace(/\s+/g, "_");
+      if (!sanitized) {
+        return;
+      }
+      if (!state.profile[section] || typeof state.profile[section] !== "object" || Array.isArray(state.profile[section])) {
+        state.profile[section] = {};
+      }
+      if (!(sanitized in state.profile[section])) {
+        state.profile[section][sanitized] = "";
+      }
+    }
+
+    state.validationIssues = validateProfile(state.profile);
+    renderSection();
+    renderValidationPanel();
+    syncJsonTextarea({ preserveFocusedJson: true });
+    queueSave();
+  }
+
+  function handleDragStart(event) {
+    const card = event.target.closest(".array-card");
+    if (!card) {
+      return;
+    }
+
+    state.dragIndex = Number.parseInt(card.dataset.index || "-1", 10);
+    card.classList.add("dragging");
+  }
+
+  function handleDragOver(event) {
+    if (!event.target.closest(".array-card")) {
+      return;
+    }
+    event.preventDefault();
+  }
+
+  function handleDrop(event) {
+    const card = event.target.closest(".array-card");
+    if (!card || state.dragIndex === null) {
+      return;
+    }
+
+    event.preventDefault();
+    const targetIndex = Number.parseInt(card.dataset.index || "-1", 10);
+    const section = card.dataset.section;
+    if (targetIndex < 0 || !section || targetIndex === state.dragIndex) {
+      return;
+    }
+
+    moveArrayItem(state.profile[section], state.dragIndex, targetIndex);
+    state.dragIndex = null;
+    state.validationIssues = validateProfile(state.profile);
+    renderSection();
+    renderValidationPanel();
+    syncJsonTextarea({ preserveFocusedJson: true });
+    queueSave();
+  }
+
+  async function handleImport(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      state.profile = ensureProfileShape(normalizeProfileDates(parsed));
+      state.activeSection = getSectionKeys()[0];
+      state.validationIssues = validateProfile(state.profile);
+      state.jsonError = "";
+      renderAll();
+      queueSave(true);
+    } catch (error) {
+      state.saveState = "error";
+      updateSaveStatus(`Import failed: ${error.message}`);
+    } finally {
+      importFile.value = "";
+    }
+  }
+
+  function exportProfile() {
+    const blob = new Blob([JSON.stringify(state.profile, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "JobAutofill_Profile.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function renderValidationPanel() {
+    const issues = state.validationIssues.filter((issue) => issue.path.startsWith(state.activeSection));
+    validationRoot.innerHTML = "";
+
+    if (!issues.length) {
+      const ok = document.createElement("div");
+      ok.className = "validation-item";
+      ok.textContent = "No validation issues in the active section.";
+      validationRoot.appendChild(ok);
+      return;
+    }
+
+    issues.slice(0, 10).forEach((issue) => {
+      const node = document.createElement("div");
+      node.className = "validation-item";
+      node.textContent = `${issue.label}: ${issue.message}`;
+      validationRoot.appendChild(node);
+    });
+  }
+
+  function refreshValidationState() {
+    const issuesByPath = new Map(state.validationIssues.map((issue) => [issue.path, issue.message]));
+    sectionRoot.querySelectorAll(".field-shell").forEach((shell) => {
+      const path = shell.dataset.path;
+      const help = shell.querySelector(".field-help");
+      if (path && issuesByPath.has(path)) {
+        shell.classList.add("invalid");
+        if (help) {
+          help.textContent = issuesByPath.get(path);
+        }
+      } else {
+        shell.classList.remove("invalid");
+        if (help) {
+          help.textContent = "";
+        }
+      }
+    });
+  }
+
+  function queueSave(immediate = false) {
+    if (state.jsonError) {
+      return;
+    }
+
+    state.saveState = "saving";
+    updateSaveStatus();
+    clearTimeout(state.saveTimer);
+    state.saveTimer = setTimeout(persistState, immediate ? 0 : 700);
+  }
+
+  function queueValidationRefresh() {
+    clearTimeout(state.validationTimer);
+    state.validationTimer = setTimeout(() => {
+      state.validationIssues = validateProfile(state.profile);
+      renderValidationPanel();
+      refreshValidationState();
+      syncJsonTextarea({ preserveFocusedJson: true });
+    }, 120);
+  }
+
+  async function persistState() {
+    clearTimeout(state.saveTimer);
+    state.saveTimer = null;
+    clearTimeout(state.validationTimer);
+    state.validationTimer = null;
+
+    if (state.jsonError) {
+      return;
+    }
+
+    state.validationIssues = validateProfile(state.profile);
+    await storageSet({
+      userProfile: JSON.stringify(state.profile),
+      settingAutoContinue: state.autoContinue
+    });
+
+    state.lastSavedAt = new Date();
+    state.saveState = "saved";
+    updateSaveStatus();
+    renderValidationPanel();
+    refreshValidationState();
+    syncJsonTextarea({ preserveFocusedJson: true });
+  }
+
+  function updateSaveStatus(customMessage = "") {
+    if (customMessage) {
+      saveStatus.textContent = customMessage;
+      saveStatus.className = "pill error";
+      return;
+    }
+
+    if (state.saveState === "error") {
+      saveStatus.textContent = state.jsonError || "Fix the current error before saving.";
+      saveStatus.className = "pill error";
+      return;
+    }
+
+    if (state.saveState === "saving") {
+      saveStatus.textContent = "Autosaving profile...";
+      saveStatus.className = "pill saving";
+      return;
+    }
+
+    const suffix = state.lastSavedAt
+      ? `Last saved at ${state.lastSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+      : "Profile synced.";
+    saveStatus.textContent = suffix;
+    saveStatus.className = state.validationIssues.length ? "pill warning" : "pill saved";
+  }
+
+  function syncJsonTextarea(options = {}) {
+    if (options.preserveFocusedJson && document.activeElement === jsonTextarea) {
+      return;
+    }
+    jsonTextarea.value = JSON.stringify(state.profile, null, 2);
+  }
+
+  function resolveSchema(sectionKey) {
+    return schemaMap.get(sectionKey) || inferSchema(sectionKey, state.profile[sectionKey]);
+  }
+
+  function getSectionKeys() {
+    const known = SECTION_SCHEMA.map((section) => section.key);
+    const actual = Object.keys(state.profile || {});
+    return [...new Set([...known, ...actual])];
+  }
+
+  function getSectionValue(sectionKey) {
+    if (!(sectionKey in state.profile)) {
+      const schema = schemaMap.get(sectionKey);
+      state.profile[sectionKey] = schema?.type === "array" ? [] : {};
+    }
+    return state.profile[sectionKey];
+  }
+
+  function getSectionTitle(sectionKey) {
+    return resolveSchema(sectionKey).title || prettifyKey(sectionKey);
+  }
+
+  function buildDefaultProfile() {
+    const profile = {};
+    SECTION_SCHEMA.forEach((section) => {
+      profile[section.key] = section.type === "array" ? [] : {};
+    });
+    return profile;
+  }
+
+  function ensureProfileShape(profile) {
+    const merged = { ...buildDefaultProfile(), ...(profile || {}) };
+    SECTION_SCHEMA.forEach((section) => {
+      if (!(section.key in merged)) {
+        merged[section.key] = section.type === "array" ? [] : {};
+      }
+    });
+    return merged;
+  }
+
+  function inferSchema(sectionKey, value) {
+    if (Array.isArray(value)) {
+      const isSimpleArray = value.every((item) => item === null || ["string", "number", "boolean"].includes(typeof item));
+      return {
+        key: sectionKey,
+        title: prettifyKey(sectionKey),
+        description: "Inferred from the current profile data.",
+        type: "array",
+        simpleArray: isSimpleArray,
+        simpleLabel: prettifyKey(sectionKey).replace(/s$/, ""),
+        addLabel: `Add ${prettifyKey(sectionKey).replace(/s$/, "")}`,
+        fields: !isSimpleArray ? inferObjectFields(value[0] || {}) : undefined
+      };
+    }
+
+    return {
+      key: sectionKey,
+      title: prettifyKey(sectionKey),
+      description: "Inferred from the current profile data.",
+      type: "object",
+      fields: inferObjectFields(value || {})
+    };
+  }
+
+  function inferObjectFields(obj) {
+    return Object.keys(obj || {}).map((key) => {
+      const value = obj[key];
+      return {
+        key,
+        label: prettifyKey(key),
+        type: inferFieldType({}, value)
+      };
+    });
+  }
+
+  function composeDisplayFields(schema, sectionValue) {
+    const actualObject = sectionValue && typeof sectionValue === "object" && !Array.isArray(sectionValue)
+      ? sectionValue
+      : {};
+    const actualKeys = Object.keys(actualObject);
+    const used = new Set();
+    const fields = [];
+
+    if (schema.fields?.length) {
+      schema.fields.forEach((field) => {
+        const matchedKey = actualKeys.find((key) => normalizeKey(key) === normalizeKey(field.key)) || field.key;
+        if (actualKeys.includes(matchedKey) || matchedKey === field.key) {
+          fields.push({
+            ...field,
+            key: matchedKey,
+            label: prettifyKey(matchedKey)
+          });
+          used.add(matchedKey);
+        }
+      });
+    }
+
+    actualKeys.forEach((key) => {
+      if (!used.has(key)) {
+        fields.push({
+          key,
+          label: prettifyKey(key),
+          type: inferFieldType({}, actualObject[key])
+        });
+      }
+    });
+
+    return dedupeFields(fields);
+  }
+
+  function dedupeFields(fields) {
+    const seen = new Set();
+    return fields.filter((field) => {
+      const marker = normalizeKey(field.key);
+      if (seen.has(marker)) {
+        return false;
+      }
+      seen.add(marker);
+      return true;
+    });
+  }
+
+  function inferFieldType(field, value) {
+    if (field.type) {
+      return field.type;
+    }
+    if (Array.isArray(value)) {
+      return "list";
+    }
+    if (value && typeof value === "object") {
+      return "json";
+    }
+    if (typeof value === "string" && looksLikeIsoDate(value)) {
+      return "date";
+    }
+    return "text";
+  }
+
+  function createArrayItemTemplate(schema, existingItem) {
+    if (schema.simpleArray) {
+      return "";
+    }
+
+    const template = {};
+    const fields = schema.fields?.length ? schema.fields : inferObjectFields(existingItem || {});
+    fields.forEach((field) => {
+      template[field.key] = defaultFieldValue(field.type || "text");
+    });
+    return template;
+  }
+
+  function defaultFieldValue(type) {
+    if (type === "list") {
+      return [];
+    }
+    if (type === "json") {
+      return {};
+    }
+    return "";
+  }
+
+  function parseFieldValue(fieldType, rawValue) {
+    if (fieldType === "list") {
+      return rawValue
+        .split("\n")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    if (fieldType === "json") {
+      try {
+        return rawValue.trim() ? JSON.parse(rawValue) : {};
+      } catch (error) {
+        return rawValue;
+      }
+    }
+
+    if (fieldType === "date") {
+      return normalizeDateString(rawValue);
+    }
+
+    return rawValue;
+  }
+
+  function validateProfile(profile) {
+    const issues = [];
+
+    SECTION_SCHEMA.forEach((section) => {
+      const value = profile[section.key];
+      if (section.type === "object") {
+        const fields = section.fields || [];
+        fields.forEach((field) => {
+          validateField(`${section.key}.${field.key}`, field, getByPath(profile, `${section.key}.${field.key}`), issues);
+        });
+      } else if (section.type === "array") {
+        if (!Array.isArray(value)) {
+          return;
+        }
+        value.forEach((item, index) => {
+          if (section.simpleArray) {
+            validateField(`${section.key}.${index}`, { label: section.simpleLabel, required: false }, item, issues);
             return;
-        }
-
-        if (!activeSection || !rootKeys.includes(activeSection)) {
-            activeSection = rootKeys[0];
-        }
-
-        // Build Inner Tabs
-        rootKeys.forEach(key => {
-            const btn = document.createElement('button');
-            btn.className = `section-tab-btn ${key === activeSection ? 'active' : ''}`;
-            btn.textContent = formatTitle(key);
-            btn.addEventListener('click', () => {
-                syncFormToProfile();
-                activeSection = key;
-                buildFormUI();
-            });
-            sectionTabsContainer.appendChild(btn);
+          }
+          const itemFields = section.fields || inferObjectFields(item || {});
+          itemFields.forEach((field) => {
+            validateField(`${section.key}.${index}.${field.key}`, field, item?.[field.key], issues);
+          });
         });
-
-        // Build Content for Active Tab
-        if (STATIC_SECTIONS.includes(activeSection)) {
-            const staticEl = document.getElementById(`static-${activeSection}`);
-            if (staticEl) staticEl.classList.remove('hidden');
-            populateStaticForm(activeSection, userProfile[activeSection]);
-        } else {
-            dynamicForm.classList.remove('hidden');
-            const sectionData = userProfile[activeSection];
-            
-            if (Array.isArray(sectionData)) {
-                buildArrayUI(activeSection, sectionData);
-            } else if (typeof sectionData === 'object' && sectionData !== null) {
-                buildObjectUI(activeSection, sectionData);
-            } else {
-                // Primitive at root? Unlikely but supported
-                const grid = document.createElement('div');
-                grid.className = 'form-grid form-group';
-                grid.dataset.isRootPrimitive = "true";
-                grid.appendChild(createTextInput(activeSection, sectionData));
-                dynamicForm.appendChild(grid);
-            }
-
-            appendCustomFieldAdder();
-        }
-    }
-
-    function populateStaticForm(section, data) {
-        if (!data) return;
-        if (section === 'personal_information') {
-            const fullName = data.full_name || data.name || '';
-            let fName = data.first_name || '';
-            let lName = data.last_name || '';
-            if (!fName && !lName && fullName) {
-                const parts = fullName.split(' ');
-                fName = parts[0];
-                lName = parts.slice(1).join(' ');
-            }
-
-            document.getElementById('first_name').value = fName;
-            document.getElementById('middle_name').value = data.middle_name || '';
-            document.getElementById('last_name').value = lName;
-            document.getElementById('fathers_name').value = data.fathers_name || '';
-            document.getElementById('mothers_name').value = data.mothers_name || '';
-            document.getElementById('gender').value = data.gender || '';
-            document.getElementById('nationality').value = data.nationality || '';
-            
-            if (data.birth_date) {
-                if (typeof data.birth_date === 'string') {
-                    document.getElementById('birth_date').value = data.birth_date;
-                } else {
-                    document.getElementById('birth_date').value = formatDateForInput(data.birth_date);
-                }
-            }
-
-            document.getElementById('phone_country_code').value = data.phone_country_code || '+91';
-            document.getElementById('phone_number').value = data.phone_number || data.phone || '';
-            document.getElementById('alternate_phone').value = data.alternate_phone || '';
-            document.getElementById('email').value = data.email || '';
-            document.getElementById('alternate_email').value = data.alternate_email || '';
-            
-            if (data.location && typeof data.location === 'object') {
-                document.getElementById('country').value = data.location.country || 'India';
-                document.getElementById('state').value = data.location.state || '';
-                document.getElementById('city').value = data.location.city || '';
-                document.getElementById('postal_code').value = data.location.postal_code || '';
-                document.getElementById('full_address').value = data.location.full_address || '';
-            } else if (typeof data.location === 'string') {
-                document.getElementById('full_address').value = data.location;
-            }
-            
-            if (data.links) {
-                document.getElementById('linkedin').value = data.links.linkedin || '';
-                document.getElementById('github').value = data.links.github || '';
-                document.getElementById('twitter').value = data.links.twitter || '';
-                document.getElementById('website').value = data.links.website || '';
-            } else {
-                document.getElementById('linkedin').value = data.linkedin || '';
-                document.getElementById('github').value = data.github || '';
-                document.getElementById('twitter').value = data.twitter || '';
-                document.getElementById('website').value = data.website || '';
-            }
-        } else if (section === 'statutory_and_legal') {
-            document.getElementById('pan_number').value = data.pan_number || '';
-            document.getElementById('aadhaar_number').value = data.aadhaar_number || '';
-            if (data.requires_sponsorship) document.getElementById('sponsorship_status').value = data.requires_sponsorship;
-        } else if (section === 'job_preferences') {
-            if (data.notice_period_days) document.getElementById('notice_period').value = data.notice_period_days;
-            document.getElementById('expected_ctc').value = data.expected_ctc_lpa || '';
-            document.getElementById('current_ctc').value = data.current_ctc_lpa || '';
-            if (data.willing_to_relocate) document.getElementById('relocate_status').value = data.willing_to_relocate;
-        } else if (section === 'education_history') {
-            if (data.has_active_backlogs) document.getElementById('active_backlogs').value = data.has_active_backlogs;
-            if (data.undergraduate) {
-                document.getElementById('ug_institution').value = data.undergraduate.institution || '';
-                document.getElementById('ug_branch').value = data.undergraduate.specialization || '';
-                document.getElementById('ug_score').value = data.undergraduate.score || '';
-                if (data.undergraduate.start_date) document.getElementById('ug_start_date').value = formatDateForInput(data.undergraduate.start_date);
-                if (data.undergraduate.end_date) document.getElementById('ug_end_date').value = formatDateForInput(data.undergraduate.end_date);
-            }
-            if (data.twelfth_standard) {
-                if (data.twelfth_standard.board) document.getElementById('hsc_board').value = data.twelfth_standard.board;
-                document.getElementById('hsc_score').value = data.twelfth_standard.score || '';
-                if (data.twelfth_standard.start_date) document.getElementById('hsc_start_date').value = formatDateForInput(data.twelfth_standard.start_date);
-                if (data.twelfth_standard.end_date) document.getElementById('hsc_end_date').value = formatDateForInput(data.twelfth_standard.end_date);
-            }
-            if (data.tenth_standard) {
-                if (data.tenth_standard.board) document.getElementById('ssc_board').value = data.tenth_standard.board;
-                document.getElementById('ssc_score').value = data.tenth_standard.score || '';
-                if (data.tenth_standard.start_date) document.getElementById('ssc_start_date').value = formatDateForInput(data.tenth_standard.start_date);
-                if (data.tenth_standard.end_date) document.getElementById('ssc_end_date').value = formatDateForInput(data.tenth_standard.end_date);
-            }
-        }
-    }
-
-    function buildObjectUI(parentKey, obj) {
-        const group = document.createElement('div');
-        group.className = 'form-group';
-        
-        const header = document.createElement('div');
-        header.className = 'form-group-header';
-        
-        const title = document.createElement('h3');
-        title.textContent = formatTitle(parentKey) + " Fields";
-
-        const btnEdit = document.createElement('button');
-        btnEdit.className = 'btn-outline';
-        btnEdit.style.fontSize = '0.85rem';
-        btnEdit.style.padding = '6px 12px';
-        btnEdit.innerHTML = '✏️ Edit Labels';
-
-        let isEditMode = false;
-        btnEdit.addEventListener('click', () => {
-            if (isEditMode) {
-                let hasError = false;
-                group.querySelectorAll('.key-edit-input').forEach(input => {
-                    if (input.value.trim() === '') {
-                        hasError = true;
-                        input.style.borderBottomColor = 'var(--danger)';
-                        input.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
-                    } else {
-                        input.style.borderBottomColor = '';
-                        input.style.backgroundColor = '';
-                    }
-                });
-                if (hasError) {
-                    alert('Label names cannot be empty.');
-                    return;
-                }
-            }
-            
-            isEditMode = !isEditMode;
-            
-            if (!isEditMode) {
-                btnEdit.classList.remove('btn-success');
-                btnEdit.classList.add('btn-outline');
-                // Leaving edit mode -> Update keys immediately
-                group.querySelectorAll('.input-wrapper').forEach(wrapper => {
-                    const label = wrapper.querySelector('.field-label');
-                    const keyInput = wrapper.querySelector('.key-edit-input');
-                    const valInput = wrapper.querySelector('.value-input');
-                    
-                    if(keyInput && keyInput.value.trim() !== '') {
-                        const newKey = keyInput.value.trim().replace(/ /g, '_');
-                        valInput.dataset.key = newKey;
-                        label.textContent = formatTitle(newKey);
-                    }
-                    
-                    label.classList.remove('hidden');
-                    keyInput.classList.add('hidden');
-                });
-            } else {
-                btnEdit.classList.add('btn-success');
-                btnEdit.classList.remove('btn-outline');
-                // Entering edit mode -> Reveal key inputs
-                group.querySelectorAll('.input-wrapper').forEach(wrapper => {
-                    const label = wrapper.querySelector('.field-label');
-                    const keyInput = wrapper.querySelector('.key-edit-input');
-                    if (label && keyInput) {
-                        label.classList.add('hidden');
-                        keyInput.classList.remove('hidden');
-                    }
-                });
-            }
-            btnEdit.innerHTML = isEditMode ? '✅ Done Editing' : '✏️ Edit Labels';
-        });
-
-        header.appendChild(title);
-        header.appendChild(btnEdit);
-        group.appendChild(header);
-
-        const grid = document.createElement('div');
-        grid.className = 'form-grid';
-        grid.dataset.parentKey = parentKey;
-
-        for (const [key, value] of Object.entries(obj)) {
-            if (typeof value === 'object' && value !== null) {
-                grid.appendChild(createTextareaInput(key, value));
-            } else {
-                grid.appendChild(createTextInput(key, value));
-            }
-        }
-        
-        group.appendChild(grid);
-        dynamicForm.appendChild(group);
-    }
-
-    function buildArrayUI(parentKey, arr) {
-        const container = document.createElement('div');
-        container.className = 'array-container';
-        container.dataset.parentKey = parentKey;
-
-        arr.forEach((item, index) => {
-            const block = document.createElement('div');
-            block.className = 'array-block form-group';
-            block.dataset.arrayIndex = index;
-
-            const header = document.createElement('div');
-            header.className = 'array-block-header';
-            header.style.justifyContent = 'space-between';
-            header.style.alignItems = 'center';
-
-            const btnEdit = document.createElement('button');
-            btnEdit.className = 'btn-outline';
-            btnEdit.style.fontSize = '0.75rem';
-            btnEdit.style.padding = '4px 8px';
-            btnEdit.innerHTML = '✏️ Edit Labels';
-
-            let isEditMode = false;
-            btnEdit.addEventListener('click', () => {
-                if (isEditMode) {
-                    let hasError = false;
-                    block.querySelectorAll('.key-edit-input').forEach(input => {
-                        if (input.value.trim() === '') {
-                            hasError = true;
-                            input.style.borderBottomColor = 'var(--danger)';
-                            input.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
-                        } else {
-                            input.style.borderBottomColor = '';
-                            input.style.backgroundColor = '';
-                        }
-                    });
-                    if (hasError) {
-                        alert('Label names cannot be empty.');
-                        return;
-                    }
-                }
-                
-                isEditMode = !isEditMode;
-                if (!isEditMode) {
-                    btnEdit.classList.remove('btn-success');
-                    btnEdit.classList.add('btn-outline');
-                    block.querySelectorAll('.input-wrapper').forEach(wrapper => {
-                        const label = wrapper.querySelector('.field-label');
-                        const keyInput = wrapper.querySelector('.key-edit-input');
-                        const valInput = wrapper.querySelector('.value-input');
-                        if (keyInput && valInput && keyInput.value.trim() !== '') {
-                            const newKey = keyInput.value.trim().replace(/ /g, '_');
-                            valInput.dataset.key = newKey;
-                            label.textContent = formatTitle(newKey);
-                            label.classList.remove('hidden');
-                            keyInput.classList.add('hidden');
-                        }
-                    });
-                } else {
-                    btnEdit.classList.add('btn-success');
-                    btnEdit.classList.remove('btn-outline');
-                    block.querySelectorAll('.input-wrapper').forEach(wrapper => {
-                        const label = wrapper.querySelector('.field-label');
-                        const keyInput = wrapper.querySelector('.key-edit-input');
-                        if(label && keyInput) {
-                            label.classList.add('hidden');
-                            keyInput.classList.remove('hidden');
-                        }
-                    });
-                }
-                btnEdit.innerHTML = isEditMode ? '✅ Done Editing' : '✏️ Edit Labels';
-            });
-            
-            const btnRemove = document.createElement('button');
-            btnRemove.className = 'btn-remove-array';
-            btnRemove.innerHTML = `[-] Remove Item`;
-            btnRemove.addEventListener('click', () => {
-                if(confirm("Remove this entry?")) {
-                    arr.splice(index, 1);
-                    syncFormToProfile(true); 
-                    userProfile[activeSection] = arr; 
-                    buildFormUI(); 
-                }
-            });
-
-            header.appendChild(btnEdit);
-            block.appendChild(header);
-
-            const grid = document.createElement('div');
-            grid.className = 'form-grid';
-            
-            if (typeof item === 'object' && item !== null) {
-                for (const [k, v] of Object.entries(item)) {
-                    if (k.includes('date')) {
-                        grid.appendChild(createDateInput(k, v));
-                    } else if (typeof v === 'object' && v !== null) {
-                        grid.appendChild(createTextareaInput(k, v));
-                    } else {
-                        grid.appendChild(createTextInput(k, v));
-                    }
-                }
-            } else {
-                grid.appendChild(createTextInput("Value", item));
-            }
-            
-            block.appendChild(grid);
-
-            const bottomActions = document.createElement('div');
-            bottomActions.style.display = 'flex';
-            bottomActions.style.justifyContent = 'flex-end';
-            bottomActions.style.marginTop = '24px';
-            bottomActions.style.borderTop = '1px solid var(--border)';
-            bottomActions.style.paddingTop = '16px';
-            bottomActions.appendChild(btnRemove);
-
-            block.appendChild(bottomActions);
-            
-            container.appendChild(block);
-        });
-
-        const btnAdd = document.createElement('button');
-        btnAdd.className = 'btn-add-array';
-        btnAdd.innerHTML = `[+] Add ${formatTitle(parentKey).replace(/s$/, '')}`;
-        btnAdd.addEventListener('click', () => {
-            syncFormToProfile();
-            
-            let template;
-            if (arr.length > 0 && typeof arr[0] === 'object') {
-                // Copy structure of existing item
-                template = Object.fromEntries(Object.keys(arr[0]).map(k => [k, ""]));
-            } else {
-                // Fallback for empty arrays (create a generic key/value pair so it doesn't crash)
-                template = { "title": "", "description": "" };
-            }
-            
-            userProfile[parentKey].push(template);
-            buildFormUI();
-        });
-
-        container.appendChild(btnAdd);
-        dynamicForm.appendChild(container);
-    }
-
-    function createTextInput(key, value) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'input-wrapper';
-        if (value && value.toString().length > 60) wrapper.style.gridColumn = "1 / -1";
-        
-        const label = document.createElement('label');
-        label.className = 'field-label';
-        label.textContent = formatTitle(key);
-        
-        const keyInput = document.createElement('input');
-        keyInput.type = 'text';
-        keyInput.className = 'key-edit-input hidden';
-        keyInput.value = key;
-        keyInput.placeholder = 'Field Name';
-        
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'value-input';
-        input.value = typeof value === 'object' ? JSON.stringify(value) : value;
-        input.dataset.key = key;
-
-        wrapper.appendChild(label);
-        wrapper.appendChild(keyInput);
-        wrapper.appendChild(input);
-        return wrapper;
-    }
-
-    function createDateInput(key, valueObj) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'input-wrapper';
-        
-        const label = document.createElement('label');
-        label.className = 'field-label';
-        label.textContent = formatTitle(key);
-        
-        const keyInput = document.createElement('input');
-        keyInput.type = 'text';
-        keyInput.className = 'key-edit-input hidden';
-        keyInput.value = key;
-        
-        const input = document.createElement('input');
-        input.type = 'date';
-        input.className = 'value-input date-input';
-        input.value = formatDateForInput(valueObj);
-        input.dataset.key = key;
-
-        wrapper.appendChild(label);
-        wrapper.appendChild(keyInput);
-        wrapper.appendChild(input);
-        return wrapper;
-    }
-
-    function createTextareaInput(key, value) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'input-wrapper';
-        wrapper.style.gridColumn = "1 / -1";
-        
-        const label = document.createElement('label');
-        label.className = 'field-label';
-        label.textContent = formatTitle(key) + " (JSON)";
-
-        const keyInput = document.createElement('input');
-        keyInput.type = 'text';
-        keyInput.className = 'key-edit-input hidden';
-        keyInput.value = key;
-        keyInput.placeholder = 'Field Name';
-        
-        const ta = document.createElement('textarea');
-        ta.className = 'value-input';
-        ta.value = JSON.stringify(value, null, 2);
-        ta.dataset.key = key;
-
-        wrapper.appendChild(label);
-        wrapper.appendChild(keyInput);
-        wrapper.appendChild(ta);
-        return wrapper;
-    }
-
-    function appendCustomFieldAdder() {
-        const adder = document.createElement('div');
-        adder.className = 'add-field-container';
-        adder.style.marginTop = '48px';
-        
-        adder.innerHTML = `
-            <h3>Add Custom Context Field to ${formatTitle(activeSection)}</h3>
-            <div class="add-field-controls">
-                <input type="text" id="new-field-key" placeholder="Field Name (e.g., specific_hobby)">
-                <input type="text" id="new-field-value" placeholder="Field Value (e.g., reading books)">
-                <button id="btn-add-field" class="btn-secondary">Add Field</button>
-            </div>
-        `;
-        
-        dynamicForm.appendChild(adder);
-        
-        adder.querySelector('#btn-add-field').addEventListener('click', () => {
-            const keyName = document.getElementById('new-field-key').value.trim().replace(/ /g, '_').toLowerCase();
-            const valueContent = document.getElementById('new-field-value').value.trim();
-            if (!keyName) return;
-
-            syncFormToProfile();
-            
-            const targetSection = userProfile[activeSection];
-            
-            if (Array.isArray(targetSection)) {
-                if(targetSection.length > 0 && typeof targetSection[0] === 'object') {
-                    targetSection.forEach(t => t[keyName] = valueContent || "New content here...");
-                } else {
-                    alert("You cannot add custom sub-fields to a simple text list (like Certifications). Convert them to objects in the JSON Editor first, or add items using the [+] button above.");
-                    return;
-                }
-            } else if (typeof targetSection === 'object' && targetSection !== null) {
-                if (targetSection[keyName]) {
-                    alert("Field already exists!");
-                    return;
-                }
-                targetSection[keyName] = valueContent || "New content here...";
-            } else {
-                alert("Cannot add fields to a primitive root value.");
-                return;
-            }
-
-            buildFormUI();
-            
-            requestAnimationFrame(() => {
-                document.querySelector('.main-content').scrollTo({
-                    top: dynamicForm.scrollHeight,
-                    behavior: 'smooth'
-                });
-            });
-        });
-    }
-
-    // Sync UI to Profile State
-    function syncFormToProfile(skipCurrentArrayRemoveEvent = false) {
-        if (!activeSection) return;
-        
-        const val = (id) => document.getElementById(id) ? document.getElementById(id).value.trim() : '';
-
-        // Safely merge existing data to prevent wiping custom fields
-        const currentData = userProfile[activeSection] || {};
-
-        if (activeSection === 'personal_information') {
-            userProfile[activeSection] = {
-                ...currentData, // Preserves custom fields
-                first_name: val('first_name'),
-                middle_name: val('middle_name'),
-                last_name: val('last_name'),
-                full_name: `${val('first_name')} ${val('middle_name')} ${val('last_name')}`.replace(/\s+/g, ' ').trim(),
-                fathers_name: val('fathers_name'),
-                mothers_name: val('mothers_name'),
-                gender: val('gender'),
-                nationality: val('nationality'),
-                birth_date: parseDateForATS(val('birth_date')),
-                phone_country_code: val('phone_country_code') || "+91",
-                phone_number: val('phone_number'),
-                alternate_phone: val('alternate_phone'),
-                email: val('email'),
-                alternate_email: val('alternate_email'),
-                location: {
-                    ...(currentData.location || {}),
-                    country: val('country') || "India",
-                    state: val('state'),
-                    city: val('city'),
-                    postal_code: val('postal_code'),
-                    full_address: val('full_address') 
-                },
-                links: {
-                    ...(currentData.links || {}),
-                    linkedin: val('linkedin'),
-                    github: val('github'),
-                    twitter: val('twitter'),
-                    website: val('website')
-                }
-            };
-            return;
-        } else if (activeSection === 'statutory_and_legal') {
-            userProfile[activeSection] = {
-                ...currentData,
-                pan_number: val('pan_number').toUpperCase(),
-                aadhaar_number: val('aadhaar_number').replace(/\s/g, ''),
-                requires_sponsorship: val('sponsorship_status') || "No",
-                authorized_to_work_in_country: "Yes"
-            };
-            return;
-        } else if (activeSection === 'job_preferences') {
-            userProfile[activeSection] = {
-                ...currentData,
-                notice_period_days: val('notice_period'),
-                expected_ctc_lpa: val('expected_ctc'),
-                current_ctc_lpa: val('current_ctc') || "0",
-                willing_to_relocate: val('relocate_status') || "Yes"
-            };
-            return;
-        } else if (activeSection === 'education_history') {
-            userProfile[activeSection] = {
-                ...currentData,
-                has_active_backlogs: val('active_backlogs') || "No",
-                undergraduate: {
-                    ...(currentData.undergraduate || {}),
-                    degree: "Bachelor of Engineering",
-                    specialization: val('ug_branch'),
-                    institution: val('ug_institution'),
-                    score_type: val('ug_score').includes('.') && parseFloat(val('ug_score')) <= 10 ? "CGPA" : "Percentage",
-                    score: val('ug_score'),
-                    start_date: parseDateForATS(val('ug_start_date')),
-                    end_date: parseDateForATS(val('ug_end_date'))
-                },
-                twelfth_standard: {
-                    ...(currentData.twelfth_standard || {}),
-                    board: val('hsc_board'),
-                    score_type: "Percentage",
-                    score: val('hsc_score'),
-                    start_date: parseDateForATS(val('hsc_start_date')),
-                    end_date: parseDateForATS(val('hsc_end_date'))
-                },
-                tenth_standard: {
-                    ...(currentData.tenth_standard || {}),
-                    board: val('ssc_board') || "State Board",
-                    score_type: "Percentage",
-                    score: val('ssc_score'),
-                    start_date: parseDateForATS(val('ssc_start_date')),
-                    end_date: parseDateForATS(val('ssc_end_date'))
-                }
-            };
-            return;
-        }
-
-        const sectionData = userProfile[activeSection];
-
-        if (Array.isArray(sectionData) && !skipCurrentArrayRemoveEvent) {
-             const newArr = [];
-             const blocks = dynamicForm.querySelectorAll('.array-block');
-             blocks.forEach(block => {
-                 const newObj = {};
-                 const inputs = block.querySelectorAll('.value-input');
-                 inputs.forEach(input => {
-                     const isGenericArrValue = input.dataset.key === "Value" && inputs.length === 1;
-                     if(isGenericArrValue) {
-                          newArr.push(input.value);
-                          return;
-                     }
-                     
-                     if (input.tagName === 'TEXTAREA') {
-                         try { newObj[input.dataset.key] = JSON.parse(input.value); } 
-                         catch(e) { newObj[input.dataset.key] = input.value; }
-                     } else if (input.type === 'date') {
-                         newObj[input.dataset.key] = parseDateForATS(input.value);
-                     } else {
-                         newObj[input.dataset.key] = input.value;
-                     }
-                 });
-                 if (Object.keys(newObj).length > 0) newArr.push(newObj);
-             });
-             userProfile[activeSection] = newArr;
-        } else if (typeof sectionData === 'object' && sectionData !== null) {
-             const grid = dynamicForm.querySelector('.form-grid');
-             if(grid) {
-                 const newObj = {};
-                 const inputs = grid.querySelectorAll('.value-input');
-                 inputs.forEach(input => {
-                     if (input.tagName === 'TEXTAREA') {
-                         try { newObj[input.dataset.key] = JSON.parse(input.value); } 
-                         catch(e) { newObj[input.dataset.key] = input.value; }
-                     } else {
-                         newObj[input.dataset.key] = input.value;
-                     }
-                 });
-                 userProfile[activeSection] = newObj;
-             }
-        }
-    }
-
-    function initJSONEditor() {
-        jsonTextarea.value = JSON.stringify(userProfile, null, 2);
-    }
-
-    // 4. Save and Import/Export globally
-    let toastTimeout;
-    btnSaveGlobal.addEventListener('click', () => {
-        const activeNavBtn = document.querySelector('.nav-btn.active');
-        if (activeNavBtn.dataset.view === 'form-view') syncFormToProfile();
-        else {
-            try { userProfile = JSON.parse(jsonTextarea.value); } 
-            catch(e) { alert("Invalid JSON format. Cannot save."); return; }
-        }
-
-        chrome.storage.local.set({ userProfile: JSON.stringify(userProfile) }, () => {
-            hasUnsavedChanges = false;
-            const originalText = "Save Changes";
-            btnSaveGlobal.innerText = "✅ Profile Saved & AI Optimized!";
-            btnSaveGlobal.style.backgroundColor = "#10b981"; // Success green
-            
-            toastMessage.classList.add('show');
-            toastMessage.classList.remove('hidden');
-            
-            clearTimeout(toastTimeout);
-            toastTimeout = setTimeout(() => {
-                btnSaveGlobal.innerText = originalText;
-                btnSaveGlobal.style.backgroundColor = "";
-                toastMessage.classList.remove('show');
-            }, 3000);
-        });
+      }
     });
 
-    btnExport.addEventListener('click', () => {
-        syncFormToProfile();
-        const dataStr = JSON.stringify(userProfile, null, 2);
-        const blob = new Blob([dataStr], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = "JobAutofill_Profile.json";
-        a.click();
-        URL.revokeObjectURL(url);
+    return issues;
+  }
+
+  function validateField(path, field, value, issues) {
+    const label = field.label || prettifyKey(field.key || path.split(".").slice(-1)[0]);
+    const type = field.type || inferFieldType(field, value);
+
+    if (field.required && isEmptyValue(value)) {
+      issues.push({ path, label, message: "This field is required for reliable ATS autofill." });
+      return;
+    }
+
+    if (!value) {
+      return;
+    }
+
+    if (type === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value))) {
+      issues.push({ path, label, message: "Use a valid email address." });
+    }
+
+    if (type === "url" && String(value).trim()) {
+      try {
+        new URL(String(value));
+      } catch (error) {
+        issues.push({ path, label, message: "Use a fully qualified URL, including https://." });
+      }
+    }
+
+    if (type === "date" && !looksLikeIsoDate(String(value))) {
+      issues.push({ path, label, message: "Dates must be stored as YYYY-MM-DD." });
+    }
+  }
+
+  function collectProfileMetrics(value) {
+    const metrics = { filledLeafCount: 0, arrayItemCount: 0 };
+    walkProfile(value, metrics);
+    return metrics;
+  }
+
+  function renameFieldKey(objectPath, currentKey, desiredKey) {
+    const container = getByPath(state.profile, objectPath);
+    if (!container || typeof container !== "object" || Array.isArray(container)) {
+      return { ok: false, message: "Field container not found." };
+    }
+
+    if (!(currentKey in container)) {
+      return { ok: false, message: "Original field was not found." };
+    }
+
+    if (desiredKey in container && desiredKey !== currentKey) {
+      return { ok: false, message: "A field with that name already exists." };
+    }
+
+    const entries = Object.entries(container);
+    const renamed = {};
+    entries.forEach(([key, value]) => {
+      renamed[key === currentKey ? desiredKey : key] = value;
     });
 
-    btnImport.addEventListener('click', () => { importFile.click(); });
-    importFile.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const newData = JSON.parse(event.target.result);
-                if(typeof newData !== 'object') throw new Error("Not an object");
-                userProfile = newData;
-                activeSection = Object.keys(userProfile)[0];
-                initJSONEditor();
-                buildFormUI();
-                document.querySelector('.nav-btn[data-view="form-view"]').click();
-            } catch(err) {
-                alert("Import failed: Invalid JSON file.");
-            }
-        };
-        reader.readAsText(file);
-        e.target.value = '';
-    });
+    setByPath(state.profile, objectPath, renamed);
+    return { ok: true };
+  }
+
+  function walkProfile(value, metrics) {
+    if (Array.isArray(value)) {
+      metrics.arrayItemCount += value.length;
+      value.forEach((item) => walkProfile(item, metrics));
+      return;
+    }
+
+    if (value && typeof value === "object") {
+      Object.values(value).forEach((nested) => walkProfile(nested, metrics));
+      return;
+    }
+
+    if (!isEmptyValue(value)) {
+      metrics.filledLeafCount += 1;
+    }
+  }
+
+  function moveArrayItem(array, fromIndex, toIndex) {
+    if (!Array.isArray(array) || fromIndex < 0 || toIndex < 0 || toIndex >= array.length) {
+      return;
+    }
+    const [moved] = array.splice(fromIndex, 1);
+    array.splice(toIndex, 0, moved);
+  }
+
+  function getByPath(obj, path) {
+    return path.split(".").reduce((current, segment) => {
+      if (current === null || current === undefined) {
+        return undefined;
+      }
+      return current[isFiniteSegment(segment) ? Number(segment) : segment];
+    }, obj);
+  }
+
+  function setByPath(obj, path, value) {
+    const segments = path.split(".");
+    let current = obj;
+
+    for (let index = 0; index < segments.length - 1; index += 1) {
+      const segment = isFiniteSegment(segments[index]) ? Number(segments[index]) : segments[index];
+      const nextSegment = segments[index + 1];
+
+      if (current[segment] === undefined) {
+        current[segment] = isFiniteSegment(nextSegment) ? [] : {};
+      }
+
+      current = current[segment];
+    }
+
+    const last = segments[segments.length - 1];
+    current[isFiniteSegment(last) ? Number(last) : last] = value;
+  }
+
+  function isFiniteSegment(value) {
+    return /^\d+$/.test(value);
+  }
+
+  function normalizeProfileDates(value, key = "") {
+    if (Array.isArray(value)) {
+      return value.map((item) => normalizeProfileDates(item, key));
+    }
+
+    if (value && typeof value === "object") {
+      if (looksLikeLegacyDateObject(value)) {
+        return legacyDateObjectToIso(value);
+      }
+
+      const output = {};
+      Object.entries(value).forEach(([nestedKey, nestedValue]) => {
+        output[nestedKey] = normalizeProfileDates(nestedValue, nestedKey);
+      });
+      return output;
+    }
+
+    if (typeof value === "string" && /date|dob|available/i.test(key)) {
+      return normalizeDateString(value);
+    }
+
+    return value;
+  }
+
+  function normalizeDateString(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return "";
+    }
+
+    if (looksLikeIsoDate(text)) {
+      return text.slice(0, 10);
+    }
+
+    const ddmmyyyy = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmmyyyy) {
+      const [, day, month, year] = ddmmyyyy;
+      return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+
+    const yyyymmdd = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (yyyymmdd) {
+      const [, year, month, day] = yyyymmdd;
+      return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+
+    return text;
+  }
+
+  function looksLikeIsoDate(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+  }
+
+  function looksLikeLegacyDateObject(value) {
+    return Boolean(value && typeof value === "object" && "year" in value && ("month" in value || "month_name" in value || "day" in value));
+  }
+
+  function legacyDateObjectToIso(value) {
+    const year = String(value.year || "").match(/\d{4}/)?.[0] || "";
+    if (!year || /^present$/i.test(String(value.year || ""))) {
+      return "";
+    }
+
+    const month = String(value.month || monthNameToNumber(value.month_name) || 1).padStart(2, "0");
+    const day = String(value.day || 1).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function monthNameToNumber(value) {
+    const months = {
+      january: 1,
+      february: 2,
+      march: 3,
+      april: 4,
+      may: 5,
+      june: 6,
+      july: 7,
+      august: 8,
+      september: 9,
+      october: 10,
+      november: 11,
+      december: 12
+    };
+    return months[String(value || "").trim().toLowerCase()] || "";
+  }
+
+  function isEmptyValue(value) {
+    return (
+      value === null ||
+      value === undefined ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0)
+    );
+  }
+
+  function prettifyKey(value) {
+    return String(value || "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
+  function sanitizeFieldKey(value) {
+    return String(value || "")
+      .trim()
+      .replace(/\s+/g, "_")
+      .replace(/[^\w]/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
+
+  function normalizeKey(value) {
+    return String(value || "")
+      .trim()
+      .replace(/\s+/g, "_")
+      .toLowerCase();
+  }
+
+  function createActionButton(text, action, section) {
+    const button = document.createElement("button");
+    button.className = "icon-btn";
+    button.dataset.action = action;
+    button.dataset.section = section;
+    button.textContent = text;
+    return button;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function storageGet(keys) {
+    return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+  }
+
+  function storageSet(values) {
+    return new Promise((resolve) => chrome.storage.local.set(values, resolve));
+  }
 });

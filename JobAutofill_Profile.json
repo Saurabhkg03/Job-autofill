@@ -1,0 +1,192 @@
+{
+  "personal_information": {
+    "prefix": "Mr",
+    "name": "Saurabh",
+    "middle_name": "Khushal",
+    "surname": "Gaikwad",
+    "fathers_name": "Khushal Ramrao Gaikwad",
+    "mothers_name": "Vidya Khushal Gaikwad",
+    "date_of_birth": "2003-06-03",
+    "gender": "Male",
+    "nationality": "Indian",
+    "country": "India",
+    "state": "Maharashtra",
+    "city": "Buldhana",
+    "address": "Purnamay Near Hanuman Temple Rajeshwar Nagar Sagwan Area",
+    "zip_code": "443001",
+    "phone_prefix": "+91",
+    "phone": "9922228569",
+    "alternate_phone": "9921750021",
+    "email": "saurabhkg36@gmail.com",
+    "alternate_email": "iamsaurabh363@gmail.com",
+    "github": "https://github.com/Saurabhkg03",
+    "linkedin": "https://www.linkedin.com/in/saurabh-gaikwad-605a70228/",
+    "twitter": "https://x.com/saurabh_exe",
+    "website": "https://yourwebsite.com",
+    "aadhar_no": "992627018945",
+    "pan_no": "EBAPG9329F"
+  },
+  "education_details": [
+    {
+      "education_level": "Bachelor's Degree",
+      "institution": "Shri Sant Gajanan Maharaj College of Engineering, Shegaon",
+      "field_of_study": "Electronics and Telecommunication Engineering",
+      "final_evaluation_grade": "6.83 SGPA (62.22%)",
+      "start_date": "2022-07-15",
+      "year_of_completion": "2026",
+      "enrollment_number": "223120368"
+    },
+    {
+      "education_level": "12th Standard",
+      "institution": "Rajarshi Shahu Junior College",
+      "year_of_completion": "2021",
+      "final_evaluation_grade": "93.67%"
+    },
+    {
+      "education_level": "10th Standard",
+      "institution": "Prabodhan Vidyalaya Buldana",
+      "year_of_completion": "2019",
+      "final_evaluation_grade": "90.80%"
+    }
+  ],
+  "experience_details": [
+    {
+      "position": "DevOps & Automation Intern",
+      "company": "Apexa iQ",
+      "employment_period": "03/2025 - Present",
+      "location": "India",
+      "key_responsibilities": [
+        "Used Python, Selenium, Docker, Pytest, Kubernetes"
+      ],
+      "skills_acquired": [
+        "Python",
+        "Selenium",
+        "Docker",
+        "Pytest",
+        "Kubernetes"
+      ]
+    },
+    {
+      "position": "Project Intern",
+      "company": "Kirdak Group Sambhajinagar",
+      "employment_period": "07/2024 - 08/2024",
+      "location": "India",
+      "key_responsibilities": [
+        "Reduced pulsar coil rejection rates by 20%"
+      ]
+    },
+    {
+      "position": "AI & ML Intern",
+      "company": "OneSmarter Inc, USA",
+      "employment_period": "04/2023 - 02/2024",
+      "location": "USA (Remote)",
+      "key_responsibilities": [
+        "Led team of 4",
+        "Built AI Homepage Extension",
+        "Built Amazon Scraper"
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Saraav - Edtech Platform",
+      "description": "Full-stack platform for SGBAU students (React.js, TypeScript, Firebase)."
+    },
+    {
+      "name": "Solar Panels Detection from ISRO Dataset",
+      "description": "Tensorflow, CNN, U-Net, QGIS."
+    },
+    {
+      "name": "Amazon Reviews Scraper & Data Analysis",
+      "description": "Docker, Splash JS, Flask, ChatGPT API."
+    },
+    {
+      "name": "AI Homepage Chrome Extension",
+      "description": "Javascript, CSS, HTML, Chrome APIs."
+    }
+  ],
+  "technical_skills": {
+    "Languages": [
+      "Python",
+      "C",
+      "C++",
+      "HTML",
+      "CSS",
+      "SQL"
+    ],
+    "Frameworks_Libraries": [
+      "FastAPI",
+      "TensorFlow",
+      "React.js",
+      "TypeScript",
+      "Tailwind CSS"
+    ],
+    "DevOps_Cloud": [
+      "Docker",
+      "Kubernetes",
+      "GitHub Actions",
+      "Firebase"
+    ],
+    "Tools": [
+      "Git",
+      "Github",
+      "Postman",
+      "QGIS",
+      "Jupyter Notebooks",
+      "Figma"
+    ]
+  },
+  "achievements": [
+    {
+      "name": "Patent Published",
+      "description": "System for Mapping of Flood and Early Warning Configuration by Means of a UAV (Pub. No. 202523064402 A)."
+    },
+    {
+      "name": "2nd Prize Avishkar Competition",
+      "description": "University level competition"
+    }
+  ],
+  "certifications": [
+    "NPTEL Deep Learning (IIT Ropar)",
+    "Google Cloud Data Analytics",
+    "NPTEL Machine Learning (IIT Madras)",
+    "AWS Academy ML Foundations",
+    "Google Cloud Computing Foundations",
+    "NSTI IOT Training"
+  ],
+  "languages": [
+    {
+      "language": "English",
+      "proficiency": "Fluent"
+    },
+    {
+      "language": "Hindi",
+      "proficiency": "Fluent"
+    },
+    {
+      "language": "Marathi",
+      "proficiency": "Native"
+    }
+  ],
+  "additional_information": {
+    "current_salary": "0",
+    "expected_salary": "6 lakh",
+    "notice_period": "0",
+    "earliest_available_date": "2026-05-01",
+    "cover_letter": "Maximum is 7000 characters",
+    "gender_identity": "Male",
+    "sexual_orientation": "Heterosexual / Straight",
+    "veteran_status": "I am not a protected veteran",
+    "race_ethnicity": "Asian (Not Hispanic or Latino)",
+    "disability_status": "No, I do not have a disability",
+    "resume_cv": ""
+  },
+  "work_preferences": {
+    "remote_work": "Yes",
+    "in_person_work": "Yes",
+    "open_to_relocation": "Yes",
+    "willing_to_complete_assessments": "Yes",
+    "willing_to_undergo_drug_tests": "Yes",
+    "willing_to_undergo_background_checks": "Yes"
+  }
+}
