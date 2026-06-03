@@ -8,12 +8,14 @@ let isAutofilling = false;
 
 // Emulates human interaction to safely fill inputs and comboboxes
 async function triggerReactChange(element, value) {
-    const isDropdown = element.tagName === 'SELECT' || 
-                       element.getAttribute('role') === 'combobox' || 
-                       element.getAttribute('aria-haspopup') || 
-                       (element.nextElementSibling && element.nextElementSibling.tagName === 'BUTTON');
+    // Detect if this is a custom dropdown/combobox (not a native SELECT)
+    const isCustomDropdown = (element.tagName !== 'SELECT') && (
+        element.getAttribute('role') === 'combobox' || 
+        element.getAttribute('aria-haspopup') || 
+        (element.nextElementSibling && element.nextElementSibling.tagName === 'BUTTON')
+    );
 
-    if (isDropdown) {
+    if (isCustomDropdown) {
         // Dropdown Workflow: Open -> Wait/Read from Server -> Select -> Collapse
         element.focus();
         
@@ -52,21 +54,25 @@ async function triggerReactChange(element, value) {
         element.dispatchEvent(new Event('blur', { bubbles: true }));
 
     } else {
-        // Standard Input Workflow: Just paste the proper answer!
-        simulateKeystrokes(element, value);
+        // Standard Input/Select Workflow: Just set the proper answer!
+        simulateValueChange(element, value);
     }
 }
 
-// Add this helper function to content.js
-function simulateKeystrokes(element, text) {
+// Optimized helper to fill values and trigger framework-level change detection
+function simulateValueChange(element, text) {
     element.focus();
     
-    // React 16+ value setter override
+    // React 16+ value setter overrides
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
     const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+    const nativeSelectValueSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")?.set;
 
     if (element.tagName === 'TEXTAREA') {
         if (nativeTextAreaValueSetter) nativeTextAreaValueSetter.call(element, text);
+        else element.value = text;
+    } else if (element.tagName === 'SELECT') {
+        if (nativeSelectValueSetter) nativeSelectValueSetter.call(element, text);
         else element.value = text;
     } else {
         if (nativeInputValueSetter) nativeInputValueSetter.call(element, text);
@@ -95,7 +101,7 @@ async function pollForDropdownOption(value, timeoutMs = 4000) {
         
         // Re-query items every tick to catch dynamically loaded portal elements
         let items = Array.from(document.querySelectorAll(
-            '[role="option"], li[role="option"], [data-automation-id="promptOption"], .select2-results__option, .fd-list__item'
+            '[role="option"], li[role="option"], [data-automation-id="promptOption"], .select2-results__option, .fd-list__item, .v-list-item, .ant-select-item, .mat-option, .dropdown-item'
         ));
         
         // Don't enforce strict visibility checks immediately; some frameworks use opacity or transforms
@@ -194,63 +200,49 @@ function clickDropdownOption(value) {
     
     // Broadened selector to catch more custom dropdowns
     let items = Array.from(document.querySelectorAll(
-        '[role="option"], li[role="option"], [data-automation-id="promptOption"], .fd-list__item, .sapMSelectListItem, .select2-results__option'
+        '[role="option"], li[role="option"], [data-automation-id="promptOption"], .fd-list__item, .sapMSelectListItem, .select2-results__option, .v-list-item, .ant-select-item, .mat-option, .dropdown-item'
     ));
     
     let bestMatch = null;
     let bestScore = -1;
 
-    // Word boundary regex: matches "India" but NOT "Indian" or "Indiana"
-    const exactWordRegex = new RegExp(`\\b${escapeRegExp(lowerValueStr)}\\b`);
+    // Pre-compile regexes for efficiency
+    const escapedValue = escapeRegExp(lowerValueStr);
+    const exactWordRegex = new RegExp(`^${escapedValue}$`, 'i');
+    const startWordRegex = new RegExp(`^${escapedValue}\\b`, 'i');
+    const containsWordRegex = new RegExp(`\\b${escapedValue}\\b`, 'i');
+    const fuzzyRegex = new RegExp(lowerValueStr.split('').map(c => escapeRegExp(c)).join('.*'), 'i');
 
     for (let item of items) {
-        let text = item.innerText ? item.innerText.trim().toLowerCase() : '';
-        if (text.length < 2 || text === 'no selection') continue;
+        let text = (item.innerText || item.textContent || '').trim();
+        if (text.length < 1 || /no selection/i.test(text)) continue;
 
         let currentScore = 0;
 
-        // 1. EXACT MATCH (Score: 100) - Instant Return
-        if (text === lowerValueStr) {
+        // 1. REGEX EXACT MATCH (Score: 100)
+        if (exactWordRegex.test(text)) {
             simulateClick(item);
             return true;
         }
         
-        // 2. STARTS WITH EXACT WORD (Score: 90)
-        // Matches: "India (Republic of)"
-        else if (text.startsWith(lowerValueStr) && exactWordRegex.test(text)) {
+        // 2. REGEX STARTS WITH WORD (Score: 90)
+        else if (startWordRegex.test(text)) {
             currentScore = 90;
         }
         
-        // 3. CONTAINS EXACT WORD ANYWHERE (Score: 80)
-        // Matches: "Republic of India"
-        else if (exactWordRegex.test(text)) {
+        // 3. REGEX CONTAINS WORD BOUNDARY (Score: 80)
+        else if (containsWordRegex.test(text)) {
             currentScore = 80;
         }
         
-        // 4. STARTS WITH SUBSTRING (Score: 70)
-        // Matches: "Indiana" (if search is "India")
-        else if (text.startsWith(lowerValueStr)) {
-            currentScore = 70;
+        // 4. SUBSTRING INCLUDES (Score: 70 - penalty for length diff)
+        else if (text.toLowerCase().includes(lowerValueStr)) {
+            currentScore = 70 - Math.min(20, text.length - lowerValueStr.length);
         }
         
-        // 5. INCLUDES SUBSTRING (Score: < 60)
-        // Matches: "British Indian Ocean Territory"
-        // We subtract the length difference so closer matches win.
-        // "India" (5) vs "British Indian Ocean Territory" (32) = huge penalty!
-        else if (text.includes(lowerValueStr)) {
-            currentScore = 60 - (text.length - lowerValueStr.length);
-        }
-
-        // 6. FUZZY MATCH (Multiple words) (Score: < 50)
-        else {
-            const valueWords = lowerValueStr.split(/\s+/).filter(w => w.length > 2);
-            if (valueWords.length > 1) {
-                const matchCount = valueWords.filter(w => text.includes(w)).length;
-                const scorePercentage = matchCount / valueWords.length;
-                if (scorePercentage > 0.5) {
-                    currentScore = 40 + (scorePercentage * 10); // Max 50
-                }
-            }
+        // 5. FUZZY REGEX MATCH (Score: 40)
+        else if (fuzzyRegex.test(text)) {
+            currentScore = 40;
         }
 
         // Keep track of the highest scoring item
@@ -262,11 +254,8 @@ function clickDropdownOption(value) {
 
     // After evaluating ALL items, click the one with the highest score
     if (bestMatch && bestScore > 0) {
-        console.log(`[Autofill] Selected "${bestMatch.innerText.trim()}" with score: ${bestScore}`);
-        
-        // Ensure it is in view before clicking (fixes bugs in virtualized lists)
+        console.log(`[Autofill] Regex Match: "${bestMatch.innerText.trim()}" (Score: ${bestScore})`);
         if (bestMatch.scrollIntoView) bestMatch.scrollIntoView({ block: 'nearest' });
-        
         simulateClick(bestMatch);
         return true;
     }
@@ -343,35 +332,49 @@ function extractFormSchema() {
             if (labelEl) labelText = labelEl.innerText;
         }
 
-        // Advanced Fallback: Traversal up and left to find the closest <label>
+        // Advanced Fallback: Regex-driven traversal to find the closest label-like text
         if (!labelText) {
             let current = el;
-            while (current && current !== document.body && !labelText) {
-                // Check if there is a wrapper label
-                if (current.tagName === 'LABEL' && current.innerText.trim()) {
-                    labelText = current.innerText;
-                    break;
-                }
-                
+            let depth = 0;
+            const labelRegex = /[a-z0-9]{2,}/i; // At least 2 alphanumeric chars
+            const noiseRegex = /^(click|select|enter|type|add|remove|delete|edit|save|cancel)$/i;
+
+            while (current && current !== document.body && !labelText && depth < 5) {
                 // Check preceding siblings
                 let prev = current.previousElementSibling;
                 while (prev && !labelText) {
-                    if (prev.tagName === 'LABEL' && prev.innerText.trim()) {
-                        labelText = prev.innerText;
-                    } else {
-                        // Look for a label inside the previous sibling
-                        let nestedLabel = prev.querySelector('label');
-                        if (nestedLabel && nestedLabel.innerText.trim()) {
-                            labelText = nestedLabel.innerText;
-                        } else if (prev.classList && prev.classList.contains('fd-form-label')) {
-                            // SAP specific label class fallback
-                            labelText = prev.innerText;
+                    const text = (prev.innerText || prev.textContent || '').trim();
+                    
+                    // Use regex to validate if this text "looks" like a label
+                    if (labelRegex.test(text) && !noiseRegex.test(text) && text.length < 80) {
+                        // High confidence: It's a <label> or has label-like classes
+                        if (prev.tagName === 'LABEL' || /label|title|caption|header|name/i.test(prev.className)) {
+                            labelText = text;
+                        } 
+                        // Medium confidence: It's a sibling with text (like in a table or grid)
+                        else if (text.length > 2) {
+                            labelText = text;
                         }
                     }
                     prev = prev.previousElementSibling;
                 }
+                
+                // If still no label, check parent's direct text nodes using regex
+                if (!labelText && current.parentElement) {
+                    const parentNodes = Array.from(current.parentElement.childNodes);
+                    for (const node of parentNodes) {
+                        if (node.nodeType === Node.TEXT_NODE) {
+                            const text = node.textContent.trim();
+                            if (labelRegex.test(text) && text.length > 2 && text.length < 80) {
+                                labelText = text;
+                                break;
+                            }
+                        }
+                    }
+                }
 
                 current = current.parentElement;
+                depth++;
             }
         }
 
@@ -557,16 +560,26 @@ async function injectDataIntoForm(aiMapping) {
                 }
             } 
             else if (el.tagName === 'SELECT') {
-                let targetOption = Array.from(el.options).find(opt => opt.value === mappedValue);
+                const lowerMappedValue = mappedValue.toString().toLowerCase().trim();
+                let targetOption = Array.from(el.options).find(opt => 
+                    opt.value.toLowerCase() === lowerMappedValue || 
+                    opt.innerText.toLowerCase().trim() === lowerMappedValue
+                );
+
                 if (targetOption) {
                     await triggerReactChange(el, targetOption.value);
                     filledCount++;
                 } else {
-                    // Fallback to fuzzy text match if AI hallucinates value
-                    let fallbackOpt = Array.from(el.options).find(opt => opt.innerText.toLowerCase().includes(mappedValue.toString().toLowerCase()));
+                    // Fuzzy text match fallback
+                    let fallbackOpt = Array.from(el.options).find(opt => 
+                        opt.innerText.toLowerCase().includes(lowerMappedValue) ||
+                        lowerMappedValue.includes(opt.innerText.toLowerCase().trim())
+                    );
                     if (fallbackOpt) {
                          await triggerReactChange(el, fallbackOpt.value);
                          filledCount++;
+                    } else {
+                        console.warn(`[Autofill] No option found for "${fieldName}" with value "${mappedValue}"`);
                     }
                 }
             } 
