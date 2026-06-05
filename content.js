@@ -36,11 +36,25 @@ const isTopFrame = (() => {
   }
 })();
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "CHECK_STATUS") {
-    sendResponse({ isRunning: Boolean(masterRunState?.runId) || isAutofilling });
-    return false;
-  }
+// Emulates human interaction to safely fill inputs and comboboxes
+async function triggerReactChange(element, value) {
+    // Detect if this is a custom dropdown/combobox (not a native SELECT)
+    const isCustomDropdown = (element.tagName !== 'SELECT') && (
+        element.getAttribute('role') === 'combobox' || 
+        element.getAttribute('aria-haspopup') || 
+        (element.nextElementSibling && element.nextElementSibling.tagName === 'BUTTON')
+    );
+
+    if (isCustomDropdown) {
+        // Dropdown Workflow: Open -> Wait/Read from Server -> Select -> Collapse
+        element.focus();
+        
+        // Only click ONE element to expand. If we click both the input and the sibling chevron button, it opens and instantly closes!
+        if (element.nextElementSibling && element.nextElementSibling.tagName === 'BUTTON') {
+            simulateClick(element.nextElementSibling);
+        } else {
+            simulateClick(element);
+        }
 
   if (request.action === "SKIP_CURRENT_FIELD") {
     skipCurrentField = true;
@@ -79,30 +93,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
-  return false;
-});
-
-window.addEventListener("message", (event) => {
-  const message = event.data;
-  if (!message || typeof message !== "object" || !message.channel) {
-    return;
-  }
-
-  if (message.channel === START_CHANNEL) {
-    if (message.runId && (!masterRunState || message.runId !== masterRunState.runId || !isTopFrame)) {
-      startChildFrameRun(message).catch((error) => {
-        console.error("[Autofill] Child frame run failed:", error);
-        postToTop({
-          channel: RESULT_CHANNEL,
-          runId: message.runId,
-          framePath: message.framePath,
-          result: {
-            success: false,
-            error: error.message || "Child frame error.",
-            filledCount: 0
-          }
-        });
-      });
+    } else {
+        // Standard Input/Select Workflow: Just set the proper answer!
+        simulateValueChange(element, value);
     }
     return;
   }
@@ -153,109 +146,130 @@ if (isTopFrame) {
   }
 }
 
-async function startMasterAutofill(settingsOverride) {
-  if (masterRunState?.runId) {
-    return;
-  }
+// Optimized helper to fill values and trigger framework-level change detection
+function simulateValueChange(element, text) {
+    element.focus();
+    
+    // React 16+ value setter overrides
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+    const nativeSelectValueSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")?.set;
 
-  autofillAborted = false;
-  skipCurrentField = false;
-  currentSettings = await loadSettings(settingsOverride);
-
-  const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  masterRunState = {
-    runId,
-    settings: currentSettings,
-    registered: new Set(["top"]),
-    results: new Map(),
-    lastRegistrationAt: Date.now(),
-    finalizeTimer: null
-  };
-
-  emitProgress("Starting universal DOM scan...");
-  await writeFlowCheckpoint({
-    active: true,
-    runId,
-    origin: location.origin,
-    lastUrl: location.href,
-    updatedAt: Date.now(),
-    settings: currentSettings
-  });
-
-  broadcastToChildFrames({
-    channel: START_CHANNEL,
-    runId,
-    settings: currentSettings,
-    framePath: "top"
-  }, "top");
-
-  try {
-    const selfResult = await runAutofillForCurrentFrame({ runId, framePath: "top" });
-    if (masterRunState?.runId === runId) {
-      masterRunState.results.set("top", selfResult);
-      scheduleMasterFinalize();
+    if (element.tagName === 'TEXTAREA') {
+        if (nativeTextAreaValueSetter) nativeTextAreaValueSetter.call(element, text);
+        else element.value = text;
+    } else if (element.tagName === 'SELECT') {
+        if (nativeSelectValueSetter) nativeSelectValueSetter.call(element, text);
+        else element.value = text;
+    } else {
+        if (nativeInputValueSetter) nativeInputValueSetter.call(element, text);
+        else element.value = text;
     }
-  } catch (error) {
-    masterRunState.results.set("top", {
-      success: false,
-      error: error.message || "Top frame autofill failed.",
-      filledCount: 0
-    });
-    scheduleMasterFinalize();
-  }
+
+    // Dispatch full suite of standard events
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    
+    // Simulate keyboard interaction for strict listeners (like Greenhouse)
+    const keyEventParams = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true };
+    element.dispatchEvent(new KeyboardEvent('keydown', keyEventParams));
+    element.dispatchEvent(new KeyboardEvent('keypress', keyEventParams));
+    element.dispatchEvent(new KeyboardEvent('keyup', keyEventParams));
+    
+    element.blur();
+    element.dispatchEvent(new Event('blur', { bubbles: true }));
 }
 
-async function startChildFrameRun(message) {
-  if (isTopFrame && masterRunState?.runId === message.runId) {
-    return;
-  }
-
-  if (isAutofilling) {
-    return;
-  }
-
-  autofillAborted = false;
-  skipCurrentField = false;
-  currentSettings = await loadSettings(message.settings || {});
-  postToTop({
-    channel: REGISTER_CHANNEL,
-    runId: message.runId,
-    framePath: message.framePath
-  });
-
-  broadcastToChildFrames({
-    channel: START_CHANNEL,
-    runId: message.runId,
-    settings: currentSettings,
-    framePath: message.framePath
-  }, message.framePath);
-
-  const result = await runAutofillForCurrentFrame({
-    runId: message.runId,
-    framePath: message.framePath
-  });
-
-  postToTop({
-    channel: RESULT_CHANNEL,
-    runId: message.runId,
-    framePath: message.framePath,
-    result
-  });
+async function pollForDropdownOption(value, timeoutMs = 4000) {
+    const start = Date.now();
+    
+    while (Date.now() - start < timeoutMs) {
+        if (skipCurrentField || autofillAborted) return false;
+        
+        // Re-query items every tick to catch dynamically loaded portal elements
+        let items = Array.from(document.querySelectorAll(
+            '[role="option"], li[role="option"], [data-automation-id="promptOption"], .select2-results__option, .fd-list__item, .v-list-item, .ant-select-item, .mat-option, .dropdown-item'
+        ));
+        
+        // Don't enforce strict visibility checks immediately; some frameworks use opacity or transforms
+        for (let item of items) {
+            let text = item.innerText ? item.innerText.trim().toLowerCase() : '';
+            if (text.includes(value.toString().toLowerCase().trim())) {
+                // Force into view before clicking to bypass virtual list bounds
+                if (item.scrollIntoView) {
+                    item.scrollIntoView({ block: 'nearest' });
+                }
+                simulateClick(item);
+                return true;
+            }
+        }
+        
+        // Wait a short tick before polling the DOM again
+        await new Promise(r => setTimeout(r, 200));
+    }
+    
+    return false;
 }
 
-function broadcastFrameCommand(channel, payload) {
-  if (isTopFrame) {
-    broadcastToChildFrames({ channel, ...payload }, "top");
-  } else {
-    postToTop({ channel, ...payload });
-  }
+function simulateClick(el) {
+    el.focus && el.focus();
+    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 }
 
-function broadcastToChildFrames(payload, parentPath) {
-  const frames = Array.from(document.querySelectorAll("iframe, frame"));
-  frames.forEach((frame, index) => {
-    if (!frame.contentWindow) {
-      return;
+// Simulates real typing using execCommand — triggers React/Workday internal search handlers
+function simulateTyping(element, text) {
+    element.focus();
+    // Select all existing text and delete it first
+    element.select && element.select();
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+    // Insert the new text — this goes through the browser's native input pipeline
+    // and triggers React's onChange/onInput handlers properly
+    document.execCommand('insertText', false, text);
+}
+
+// Search-and-select workflow for combobox/multiselect fields
+async function searchAndSelectOption(element, fullValue) {
+    console.log(`[Autofill] searchAndSelectOption: "${fullValue.substring(0, 50)}"`);
+    
+    // Strategy: Try progressively shorter search terms
+    // [full text] → [first 3 words] → [first 2 words] → [first word]
+    const words = fullValue.trim().split(/\s+/);
+    const searchTerms = [fullValue.trim()];
+    if (words.length > 3) searchTerms.push(words.slice(0, 3).join(' '));
+    if (words.length > 2) searchTerms.push(words.slice(0, 2).join(' '));
+    if (words.length > 1) searchTerms.push(words[0]);
+    // De-duplicate
+    const uniqueTerms = [...new Set(searchTerms)];
+    
+    for (const searchTerm of uniqueTerms) {
+        if (skipCurrentField || autofillAborted) return false;
+        console.log(`[Autofill]   Trying search term: "${searchTerm}"`);
+        
+        // Type the search term using real typing simulation
+        element.focus();
+        await new Promise(r => setTimeout(r, 50));
+        if (skipCurrentField) return false;
+        simulateTyping(element, searchTerm);
+        
+        // Wait for Workday to search and render dropdown options (short wait, then poll)
+        await new Promise(r => setTimeout(r, 150));
+        
+        if (skipCurrentField || autofillAborted) return false;
+        // Try to find and click a matching option
+        let optionClicked = clickDropdownOption(fullValue);
+        if (!optionClicked) {
+            // Poll a bit longer — server-side search might be slow
+            optionClicked = await pollForDropdownOption(fullValue, 2500);
+        }
+        
+        if (optionClicked) {
+            console.log(`[Autofill]   ✓ Selected option for: "${fullValue.substring(0, 50)}"`);
+            await new Promise(r => setTimeout(r, 200));
+            return true;
+        }
     }
 
     try {
@@ -284,134 +298,59 @@ function postToTop(payload) {
   }
 }
 
-function scheduleMasterFinalize() {
-  if (!masterRunState) {
-    return;
-  }
+function clickDropdownOption(value) {
+    if (!value || value.toString().length < 1) return false;
+    const lowerValueStr = value.toString().toLowerCase().trim();
+    
+    // Broadened selector to catch more custom dropdowns
+    let items = Array.from(document.querySelectorAll(
+        '[role="option"], li[role="option"], [data-automation-id="promptOption"], .fd-list__item, .sapMSelectListItem, .select2-results__option, .v-list-item, .ant-select-item, .mat-option, .dropdown-item'
+    ));
+    
+    let bestMatch = null;
+    let bestScore = -1;
 
-  clearTimeout(masterRunState.finalizeTimer);
+    // Pre-compile regexes for efficiency
+    const escapedValue = escapeRegExp(lowerValueStr);
+    const exactWordRegex = new RegExp(`^${escapedValue}$`, 'i');
+    const startWordRegex = new RegExp(`^${escapedValue}\\b`, 'i');
+    const containsWordRegex = new RegExp(`\\b${escapedValue}\\b`, 'i');
+    const fuzzyRegex = new RegExp(lowerValueStr.split('').map(c => escapeRegExp(c)).join('.*'), 'i');
 
-  if (masterRunState.results.size < masterRunState.registered.size) {
-    return;
-  }
+    for (let item of items) {
+        let text = (item.innerText || item.textContent || '').trim();
+        if (text.length < 1 || /no selection/i.test(text)) continue;
 
   masterRunState.finalizeTimer = setTimeout(() => {
     if (!masterRunState) {
       return;
     }
 
-    if (masterRunState.results.size < masterRunState.registered.size) {
-      return;
-    }
-
-    if (Date.now() - masterRunState.lastRegistrationAt < 1200) {
-      scheduleMasterFinalize();
-      return;
-    }
-
-    finalizeMasterRun().catch((error) => {
-      console.error("[Autofill] Finalization failed:", error);
-      emitRuntimeMessage({
-        action: "AUTOFILL_COMPLETE",
-        error: error.message || "Failed to finalize autofill."
-      });
-      clearMasterRunState();
-    });
-  }, 1300);
-}
-
-async function finalizeMasterRun(forcedResult = null) {
-  if (!masterRunState) {
-    return;
-  }
-
-  const runState = masterRunState;
-  clearMasterRunState();
-
-  if (forcedResult?.stopped) {
-    await clearPendingAutoContinue();
-    emitRuntimeMessage({ action: "AUTOFILL_COMPLETE", stopped: true, filledCount: 0 });
-    return;
-  }
-
-  const results = Array.from(runState.results.values());
-  const totalFilled = results.reduce((sum, result) => sum + (result.filledCount || 0), 0);
-  const errors = results.filter((result) => result && result.success === false && result.error);
-  const requiredRemaining = results.reduce(
-    (sum, result) => sum + (result.requiredRemaining || 0),
-    0
-  );
-
-  await recordApplicationStep(totalFilled, requiredRemaining);
-
-  let autoContinued = false;
-  if (!autofillAborted && currentSettings.autoContinue) {
-    autoContinued = await maybeAutoContinue();
-  } else {
-    await clearPendingAutoContinue();
-  }
-
-  if (autofillAborted) {
-    emitRuntimeMessage({ action: "AUTOFILL_COMPLETE", stopped: true, filledCount: totalFilled });
-    return;
-  }
-
-  if (errors.length) {
-    emitRuntimeMessage({
-      action: "AUTOFILL_COMPLETE",
-      error: errors.map((result) => result.error).join(" | "),
-      filledCount: totalFilled
-    });
-    return;
-  }
-
-  emitRuntimeMessage({
-    action: "AUTOFILL_COMPLETE",
-    success: true,
-    filledCount: totalFilled + (autoContinued ? 0 : 0)
-  });
-}
-
-function clearMasterRunState() {
-  if (masterRunState?.finalizeTimer) {
-    clearTimeout(masterRunState.finalizeTimer);
-  }
-  masterRunState = null;
-}
-
-async function runAutofillForCurrentFrame({ runId, framePath }) {
-  isAutofilling = true;
-
-  try {
-    const { profile } = await loadProfile();
-    decorateFileInputs(profile);
-    clearAiMarkers();
-
-    let totalFilled = 0;
-    let previousFieldSignature = "";
-
-    for (let pass = 1; pass <= 4; pass += 1) {
-      if (autofillAborted) {
-        break;
-      }
-
-      const fields = extractFormSchema();
-      if (!fields.length) {
-        break;
-      }
-
-      const signature = fields.map((field) => field.id).join("|");
-      if (signature === previousFieldSignature) {
-        break;
-      }
-      previousFieldSignature = signature;
-
-      emitProgress(`Pass ${pass}: sending ${fields.length} fields to Groq`, "", undefined, framePath);
-      const response = await sendRuntimeRequest({ action: "CALL_GROQ_LLM", fields });
-
-      if (response?.error) {
-        throw new Error(response.error);
-      }
+        // 1. REGEX EXACT MATCH (Score: 100)
+        if (exactWordRegex.test(text)) {
+            simulateClick(item);
+            return true;
+        }
+        
+        // 2. REGEX STARTS WITH WORD (Score: 90)
+        else if (startWordRegex.test(text)) {
+            currentScore = 90;
+        }
+        
+        // 3. REGEX CONTAINS WORD BOUNDARY (Score: 80)
+        else if (containsWordRegex.test(text)) {
+            currentScore = 80;
+        }
+        
+        // 4. SUBSTRING INCLUDES (Score: 70 - penalty for length diff)
+        else if (text.toLowerCase().includes(lowerValueStr)) {
+            currentScore = 70 - Math.min(20, text.length - lowerValueStr.length);
+        }
+        
+        // 5. FUZZY REGEX MATCH (Score: 40)
+        else if (fuzzyRegex.test(text)) {
+            currentScore = 40;
+        }
 
       totalFilled += await injectDataIntoForm(response?.mapping || {}, framePath);
 
@@ -513,8 +452,12 @@ function collectInteractiveElements() {
       return;
     }
 
-    if (seen.has(node)) {
-      return;
+    // After evaluating ALL items, click the one with the highest score
+    if (bestMatch && bestScore > 0) {
+        console.log(`[Autofill] Regex Match: "${bestMatch.innerText.trim()}" (Score: ${bestScore})`);
+        if (bestMatch.scrollIntoView) bestMatch.scrollIntoView({ block: 'nearest' });
+        simulateClick(bestMatch);
+        return true;
     }
 
     seen.add(node);
@@ -658,9 +601,51 @@ function elementHasValue(element) {
     return false;
   }
 
-  if (element.tagName === "SELECT") {
-    return Boolean(String(element.value || "").trim()) && element.selectedIndex > 0;
-  }
+        // Advanced Fallback: Regex-driven traversal to find the closest label-like text
+        if (!labelText) {
+            let current = el;
+            let depth = 0;
+            const labelRegex = /[a-z0-9]{2,}/i; // At least 2 alphanumeric chars
+            const noiseRegex = /^(click|select|enter|type|add|remove|delete|edit|save|cancel)$/i;
+
+            while (current && current !== document.body && !labelText && depth < 5) {
+                // Check preceding siblings
+                let prev = current.previousElementSibling;
+                while (prev && !labelText) {
+                    const text = (prev.innerText || prev.textContent || '').trim();
+                    
+                    // Use regex to validate if this text "looks" like a label
+                    if (labelRegex.test(text) && !noiseRegex.test(text) && text.length < 80) {
+                        // High confidence: It's a <label> or has label-like classes
+                        if (prev.tagName === 'LABEL' || /label|title|caption|header|name/i.test(prev.className)) {
+                            labelText = text;
+                        } 
+                        // Medium confidence: It's a sibling with text (like in a table or grid)
+                        else if (text.length > 2) {
+                            labelText = text;
+                        }
+                    }
+                    prev = prev.previousElementSibling;
+                }
+                
+                // If still no label, check parent's direct text nodes using regex
+                if (!labelText && current.parentElement) {
+                    const parentNodes = Array.from(current.parentElement.childNodes);
+                    for (const node of parentNodes) {
+                        if (node.nodeType === Node.TEXT_NODE) {
+                            const text = node.textContent.trim();
+                            if (labelRegex.test(text) && text.length > 2 && text.length < 80) {
+                                labelText = text;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                current = current.parentElement;
+                depth++;
+            }
+        }
 
   if (element.isContentEditable) {
     return Boolean(normalizeText(element.textContent));
@@ -909,53 +894,97 @@ function extractInlineComboboxHints(element) {
   return hints.length ? hints : undefined;
 }
 
-function inferDateMeta(element, label, context, type) {
-  const haystack = normalizeText([label, ...(context || []), element.name, element.id].join(" "));
-  const mentionsDate =
-    /\b(date|month|year|from|to|start|end|graduation|joined|employment|dob|birth)\b/.test(haystack);
+        try {
+            if (el.type === 'checkbox' || el.getAttribute('role') === 'checkbox') {
+                const shouldCheck = (mappedValue.toString().toLowerCase() === 'true' || mappedValue === 'yes' || mappedValue === true);
+                
+                // Check both native state and ARIA state
+                const isCurrentlyChecked = el.checked || el.getAttribute('aria-checked') === 'true';
+                
+                if (isCurrentlyChecked !== shouldCheck) {
+                    if (el.type === 'checkbox') {
+                        // Handle native checkbox
+                        el.checked = shouldCheck;
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        // Try to click the wrapper if the framework relies on it
+                        if (el.parentElement) el.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    } else {
+                        // Handle custom ARIA checkbox div/span
+                        simulateClick(el); 
+                    }
+                    filledCount++;
+                    await new Promise(r => setTimeout(r, 50));
+                }
+            } 
+            else if (el.tagName === 'SELECT') {
+                const lowerMappedValue = mappedValue.toString().toLowerCase().trim();
+                let targetOption = Array.from(el.options).find(opt => 
+                    opt.value.toLowerCase() === lowerMappedValue || 
+                    opt.innerText.toLowerCase().trim() === lowerMappedValue
+                );
 
-  if (!mentionsDate && !["date", "month"].includes(type)) {
-    return null;
-  }
-
-  let part = "full";
-  if (type === "month") {
-    part = "month_year";
-  } else if (/\bmonth\b/.test(haystack)) {
-    part = "month";
-  } else if (/\bday\b/.test(haystack)) {
-    part = "day";
-  } else if (/\byear\b/.test(haystack)) {
-    part = "year";
-  }
-
-  let groupLabel = label || "Date";
-  if (/\bstart|from|joined\b/.test(haystack)) {
-    groupLabel = groupLabel.replace(/\bmonth\b|\byear\b|\bday\b/gi, "").trim() || "Start Date";
-  } else if (/\bend|to|until|graduation|completion\b/.test(haystack)) {
-    groupLabel = groupLabel.replace(/\bmonth\b|\byear\b|\bday\b/gi, "").trim() || "End Date";
-  } else {
-    groupLabel = groupLabel.replace(/\bmonth\b|\byear\b|\bday\b/gi, "").trim() || "Date";
-  }
-
-  const containerKey = getGroupingContainerKey(element);
-  return { part, groupLabel, containerKey };
-}
-
-function getGroupingContainerKey(element) {
-  let current = element.parentElement;
-  for (let depth = 0; current && depth < 5; depth += 1) {
-    if (current.hasAttribute("data-ai-group-key")) {
-      return current.getAttribute("data-ai-group-key");
-    }
-
-    const interactiveCount = current.querySelectorAll(
-      "input, select, textarea, [role='combobox'], [role='checkbox'], [role='radio']"
-    ).length;
-    if (interactiveCount >= 2 && interactiveCount <= 8) {
-      const key = `group_${containerKeySequence += 1}`;
-      current.setAttribute("data-ai-group-key", key);
-      return key;
+                if (targetOption) {
+                    await triggerReactChange(el, targetOption.value);
+                    filledCount++;
+                } else {
+                    // Fuzzy text match fallback
+                    let fallbackOpt = Array.from(el.options).find(opt => 
+                        opt.innerText.toLowerCase().includes(lowerMappedValue) ||
+                        lowerMappedValue.includes(opt.innerText.toLowerCase().trim())
+                    );
+                    if (fallbackOpt) {
+                         await triggerReactChange(el, fallbackOpt.value);
+                         filledCount++;
+                    } else {
+                        console.warn(`[Autofill] No option found for "${fieldName}" with value "${mappedValue}"`);
+                    }
+                }
+            } 
+            else {
+                // Check if this is a Workday multiselect/combobox search input
+                const isMultiselect = el.closest('[data-uxi-widget-type="multiselect"]') || 
+                                      el.getAttribute('data-uxi-widget-type') === 'selectinput';
+                const isCombobox = el.getAttribute('role') === 'combobox' || 
+                                   el.getAttribute('aria-haspopup') === 'listbox' ||
+                                   el.closest('[role="combobox"]');
+                
+                if (isMultiselect || isCombobox) {
+                    // Multiselect/Combobox workflow: type to search → select from dropdown
+                    const selected = await searchAndSelectOption(el, mappedValue.toString());
+                    if (selected) {
+                        filledCount++;
+                    } else {
+                        // Fallback: just set the text value directly
+                        console.warn(`[Autofill] Falling back to direct value set for combobox "${key}"`);
+                        await triggerReactChange(el, mappedValue.toString());
+                        filledCount++;
+                    }
+                    el.dispatchEvent(new Event('blur', { bubbles: true }));
+                } else {
+                    // Standard text input
+                    await triggerReactChange(el, mappedValue.toString());
+                    filledCount++;
+                }
+            }
+            
+            if (skipCurrentField) {
+                 chrome.runtime.sendMessage({ action: "UPDATE_PROGRESS", log: `Skipped: ${fieldName}`, statusClass: "log-error", pct: pct });
+                 continue; // intentionally jump to next field
+            }
+            
+            // Visual feedback
+            if (currentSettings.highlight && el.style) {
+                el.style.border = '2px solid #4f46e5';
+                el.style.backgroundColor = '#eef2ff';
+                el.style.transition = 'all 0.3s';
+            }
+            el.setAttribute('data-ai-filled', 'true');
+            chrome.runtime.sendMessage({ action: "UPDATE_PROGRESS", log: `✓ Done: ${fieldName.substring(0, 30)}`, statusClass: "log-success", pct: pct });
+        } catch (e) {
+            console.error(`Autofill Error on field [${key}]:`, e);
+            chrome.runtime.sendMessage({ action: "UPDATE_PROGRESS", log: `✗ Error: ${fieldName.substring(0, 30)}`, statusClass: "log-error", pct: pct });
+        }
     }
     current = current.parentElement;
   }
